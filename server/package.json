@@ -1,0 +1,29 @@
+{
+  "name": "ticketing-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "seed": "node prisma/seed.js",
+    "check-users": "node scripts/check-users.js",
+    "create-admin": "node scripts/create-admin.js",
+    "fix-admin": "node scripts/fix-admin.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "@prisma/client": "^5.7.1",
+    "express-validator": "^7.0.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.7.1"
+  }
+}
+

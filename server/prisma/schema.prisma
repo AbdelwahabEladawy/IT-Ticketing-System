@@ -1,0 +1,148 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+    USER
+    TECHNICIAN
+    IT_ADMIN
+    IT_MANAGER
+    SUPER_ADMIN
+} 
+
+enum TicketStatus {
+    OPEN
+    ASSIGNED
+    IN_PROGRESS
+    RESOLVED
+    CLOSED
+}
+
+enum TechnicianStatus {
+    AVAILABLE
+    BUSY
+    OFFLINE
+}
+
+enum ProblemType {
+    PREDEFINED
+    CUSTOM
+}
+
+model User {
+    id        String   @id @default(cuid())
+    email     String   @unique
+    password  String
+    name      String
+    role      UserRole @default(USER)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    // Technician specific fields
+    specializationId String?
+    specialization   Specialization?   @relation(fields: [specializationId], references: [id])
+    status           TechnicianStatus? @default(AVAILABLE)
+
+    // Relations
+    createdTickets  Ticket[]   @relation("CreatedBy")
+    assignedTickets Ticket[]   @relation("AssignedTo")
+    auditLogs       AuditLog[]
+
+    @@index([email])
+    @@index([role])
+    @@index([specializationId])
+}
+
+model Specialization {
+    id          String   @id @default(cuid())
+    name        String   @unique
+    description String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    technicians User[]
+    tickets     Ticket[]
+
+    @@index([name])
+}
+
+model Ticket {
+    id            String       @id @default(cuid())
+    title         String
+    description   String
+    problemType   ProblemType  @default(PREDEFINED)
+    issueType     String? // Optional: Predefined issue type for direct team routing
+    status        TicketStatus @default(OPEN)
+    anydeskNumber String? // Anydesk number for remote access
+
+    // SLA tracking
+    slaHours    Int       @default(24) // Default 24 hours SLA
+    createdAt   DateTime  @default(now())
+    updatedAt   DateTime  @updatedAt
+    assignedAt  DateTime?
+    resolvedAt  DateTime?
+    closedAt    DateTime?
+    slaDeadline DateTime?
+
+    // Relations
+    createdById String
+    createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
+
+    assignedToId String?
+    assignedTo   User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
+
+    specializationId String?
+    specialization   Specialization? @relation(fields: [specializationId], references: [id])
+
+    auditLogs AuditLog[]
+
+    @@index([createdById])
+    @@index([assignedToId])
+    @@index([status])
+    @@index([specializationId])
+    @@index([problemType])
+}
+
+model AuditLog {
+    id          String   @id @default(cuid())
+    action      String // e.g., "TICKET_CREATED", "TICKET_ASSIGNED", "STATUS_CHANGED"
+    description String
+    metadata    String? // JSON string for additional data
+    createdAt   DateTime @default(now())
+
+    // Relations
+    userId String?
+    user   User?   @relation(fields: [userId], references: [id])
+
+    ticketId String?
+    ticket   Ticket? @relation(fields: [ticketId], references: [id])
+
+    @@index([userId])
+    @@index([ticketId])
+    @@index([createdAt])
+    @@index([action])
+}
+
+model Notification {
+    id        String   @id @default(cuid())
+    userId    String
+    title     String
+    message   String
+    type      String   @default("info") // info, warning, success, error
+    read      Boolean  @default(false)
+    createdAt DateTime @default(now())
+
+    ticketId String?
+
+    @@index([userId])
+    @@index([read])
+    @@index([createdAt])
+}
