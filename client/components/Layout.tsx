@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
-import { getCurrentUser, removeToken, User } from '../utils/auth';
-import api from '../utils/api';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import Link from "next/link";
+import { getCurrentUser, removeToken, User } from "../utils/auth";
+import api from "../utils/api";
+import { stopPresence } from "../utils/presence";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,6 +15,12 @@ export default function Layout({ children }: LayoutProps) {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [previousNotificationCount, setPreviousNotificationCount] = useState(0);
+
+  // Forced password change flow (for bulk-imported accounts)
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -33,23 +40,28 @@ export default function Layout({ children }: LayoutProps) {
 
   const loadNotifications = async () => {
     try {
-      const response = await api.get('/notifications?unread=true');
+      const response = await api.get("/notifications?unread=true");
       const newNotifications = response.data.notifications;
-      
-      if (newNotifications.length > previousNotificationCount && previousNotificationCount >= 0) {
+
+      if (
+        newNotifications.length > previousNotificationCount &&
+        previousNotificationCount >= 0
+      ) {
         playNotificationSound();
       }
-      
+
       setNotifications(newNotifications);
       setPreviousNotificationCount(newNotifications.length);
     } catch (error) {
-      console.error('Failed to load notifications');
+      console.error("Failed to load notifications");
     }
   };
 
   const playNotificationSound = () => {
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 
@@ -57,61 +69,116 @@ export default function Layout({ children }: LayoutProps) {
       gainNode.connect(audioContext.destination);
 
       oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
+      oscillator.type = "sine";
 
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContext.currentTime + 0.3,
+      );
 
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.3);
     } catch (error) {
-      console.error('Failed to play notification sound:', error);
+      console.error("Failed to play notification sound:", error);
     }
   };
 
   const handleMarkAllAsRead = async () => {
     try {
-      await api.patch('/notifications/read-all');
+      await api.patch("/notifications/read-all");
       await loadNotifications();
     } catch (error) {
-      console.error('Failed to mark all as read');
+      console.error("Failed to mark all as read");
     }
   };
 
   const handleLogout = () => {
+    stopPresence();
     removeToken();
-    router.push('/login');
+    router.push("/login");
   };
 
   const getRoleName = (role: string) => {
     const roles: { [key: string]: string } = {
-      USER: 'User',
-      TECHNICIAN: 'Technician',
-      IT_ADMIN: 'IT Admin',
-      IT_MANAGER: 'IT Manager',
-      SUPER_ADMIN: 'Super Admin'
+      USER: "User",
+      TECHNICIAN: "Technician",
+      IT_ADMIN: "IT Admin",
+      IT_MANAGER: "IT Manager",
+      SUPER_ADMIN: "Super Admin",
     };
     return roles[role] || role;
   };
 
   const getNavLinks = () => {
     if (!user) return [];
-    
+
     const links: { href: string; label: string; roles: string[] }[] = [
-      { href: '/dashboard', label: 'Dashboard', roles: ['USER', 'TECHNICIAN', 'IT_MANAGER', 'SUPER_ADMIN'] },
-      { href: '/tickets', label: 'Tickets', roles: ['USER', 'TECHNICIAN', 'IT_ADMIN', 'IT_MANAGER', 'SUPER_ADMIN'] },
-      { href: '/tickets/create', label: 'Create Ticket', roles: ['USER', 'IT_MANAGER', 'SUPER_ADMIN'] },
+      {
+        href: "/dashboard",
+        label: "Dashboard",
+        roles: ["USER", "TECHNICIAN", "IT_ADMIN", "IT_MANAGER", "SUPER_ADMIN"],
+      },
+      {
+        href: "/tickets",
+        label: "Tickets",
+        roles: ["USER", "TECHNICIAN", "IT_ADMIN", "IT_MANAGER", "SUPER_ADMIN"],
+      },
+      {
+        href: "/tickets/create",
+        label: "Create Ticket",
+        roles: ["USER", "IT_MANAGER", "SUPER_ADMIN"],
+      },
     ];
 
-    if (user.role === 'IT_MANAGER' || user.role === 'SUPER_ADMIN' || user.role === 'IT_ADMIN') {
-      links.push({ href: '/users', label: 'Technicians', roles: ['IT_MANAGER', 'SUPER_ADMIN', 'IT_ADMIN'] });
-      links.push({ href: '/specializations', label: 'Specializations', roles: ['IT_MANAGER', 'SUPER_ADMIN'] });
+    if (
+      user.role === "IT_MANAGER" ||
+      user.role === "SUPER_ADMIN"
+    ) {
+      links.push({
+        href: "/users",
+        label: "Technicians",
+        roles: ["IT_MANAGER", "SUPER_ADMIN"],
+      });
+      links.push({
+        href: "/specializations",
+        label: "Specializations",
+        roles: ["IT_MANAGER", "SUPER_ADMIN"],
+      });
     }
 
-    return links.filter(link => link.roles.includes(user.role));
+    return links.filter((link) => link.roles.includes(user.role));
   };
 
   if (!user) return <>{children}</>;
+
+  const handleChangePassword = async (e: any) => {
+    e.preventDefault();
+    setPwError(null);
+
+    if (pwNew.trim().length < 6) {
+      setPwError("كلمة المرور الجديدة لازم تكون 6 أحرف على الأقل");
+      return;
+    }
+
+    if (pwNew !== pwConfirm) {
+      setPwError("كلمة المرور والتأكيد مش مطابقين");
+      return;
+    }
+
+    try {
+      setPwLoading(true);
+      await api.patch("/auth/change-password", { newPassword: pwNew });
+      const updated = await getCurrentUser();
+      setUser(updated);
+      setPwNew("");
+      setPwConfirm("");
+    } catch (err: any) {
+      setPwError(err?.response?.data?.error || "Failed to change password");
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -120,19 +187,31 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex justify-between h-16">
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                  IT Ticketing System
-                </h1>
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/assets/logo.png"
+                    alt="Global Energy Logo"
+                    className="h-9 w-9 object-contain"
+                  />
+                  <h1 className="text-xl font-bold text-[#334bc6]">
+                    IT Ticketing System
+                  </h1>
+                </div>
               </div>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                {getNavLinks().map((link) => (
+                {getNavLinks()
+                  .sort((a, b) => {
+                    const order = ["/dashboard", "/tickets", "/tickets/create", "/users", "/specializations"];
+                    return order.indexOf(a.href) - order.indexOf(b.href);
+                  })
+                  .map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
                     className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors ${
                       router.pathname === link.href
-                        ? 'border-indigo-500 text-indigo-600'
-                        : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900"
                     }`}
                   >
                     {link.label}
@@ -146,8 +225,18 @@ export default function Layout({ children }: LayoutProps) {
                   onClick={() => setShowNotifications(!showNotifications)}
                   className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                    />
                   </svg>
                   {notifications.length > 0 && (
                     <span className="absolute top-1 right-1 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"></span>
@@ -156,7 +245,9 @@ export default function Layout({ children }: LayoutProps) {
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-50 border border-gray-200">
                     <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-blue-50">
-                      <h3 className="font-semibold text-gray-900">Notifications</h3>
+                      <h3 className="font-semibold text-gray-900">
+                        Notifications
+                      </h3>
                       {notifications.length > 0 && (
                         <button
                           onClick={handleMarkAllAsRead}
@@ -168,12 +259,21 @@ export default function Layout({ children }: LayoutProps) {
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">No notifications</div>
+                        <div className="p-4 text-center text-gray-500">
+                          No notifications
+                        </div>
                       ) : (
                         notifications.map((notif) => (
-                          <div key={notif.id} className="p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer">
-                            <div className="font-medium text-gray-900">{notif.title}</div>
-                            <div className="text-sm text-gray-600 mt-1">{notif.message}</div>
+                          <div
+                            key={notif.id}
+                            className="p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                          >
+                            <div className="font-medium text-gray-900">
+                              {notif.title}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {notif.message}
+                            </div>
                             <div className="text-xs text-gray-400 mt-2">
                               {new Date(notif.createdAt).toLocaleString()}
                             </div>
@@ -185,8 +285,12 @@ export default function Layout({ children }: LayoutProps) {
                 )}
               </div>
               <div className="flex items-center space-x-2 px-3 py-1 rounded-lg bg-gray-50">
-                <span className="text-sm font-medium text-gray-700">{user.name}</span>
-                <span className="text-xs text-gray-500">({getRoleName(user.role)})</span>
+                <span className="text-sm font-medium text-gray-700">
+                  {user.name}
+                </span>
+                <span className="text-xs text-gray-500">
+                  ({getRoleName(user.role)})
+                </span>
               </div>
               <button
                 onClick={handleLogout}
@@ -199,6 +303,63 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </nav>
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">{children}</main>
+
+      {user?.mustChangePassword && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">
+              غير الباسورد بتاعك
+            </h3>
+            <p className="text-sm text-gray-600 mt-1 mb-4">
+              لازم تغير كلمة المرور لأول مرة قبل استخدام النظام.
+            </p>
+
+            {pwError && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {pwError}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={pwLoading}
+                className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-3 rounded-lg font-medium hover:from-indigo-700 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50"
+              >
+                {pwLoading ? "Saving..." : "Save Password"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -19,12 +19,7 @@ export default function Login() {
     try {
       const response = await api.post('/auth/login', { email, password });
       setToken(response.data.token);
-      // IT Admin goes to tickets page, others go to dashboard
-      if (response.data.user?.role === 'IT_ADMIN') {
-        router.push('/tickets');
-      } else {
-        router.push('/dashboard');
-      }
+      router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

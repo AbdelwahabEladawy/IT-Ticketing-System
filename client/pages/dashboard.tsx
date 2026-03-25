@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import api from '../utils/api';
+import { getCurrentUser } from '../utils/auth';
 import { format } from 'date-fns';
 
 interface Ticket {
@@ -12,16 +13,26 @@ interface Ticket {
   slaDeadline: string;
   slaStatus: string;
   createdAt: string;
-  assignedTo?: { name: string };
+  assignedTo?: { name: string } | null;
   specialization?: { name: string };
 }
 
 export default function Dashboard() {
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED' | 'CLOSED' | 'PENDING'>('ALL');
 
   useEffect(() => {
     loadDashboard();
+  }, []);
+
+  useEffect(() => {
+    const loadRole = async () => {
+      const currentUser = await getCurrentUser();
+      setUserRole(currentUser?.role ?? null);
+    };
+    loadRole();
   }, []);
 
   const loadDashboard = async () => {
@@ -56,6 +67,42 @@ export default function Dashboard() {
     return colors[slaStatus] || 'text-gray-600';
   };
 
+  const summaryCards = dashboard?.stats
+    ? [
+        {
+          key: 'ALL',
+          label: 'Total Tickets',
+          value: dashboard.stats.total ?? dashboard.stats.totalTickets ?? 0
+        },
+        {
+          key: 'OPEN',
+          label: 'Open',
+          value: dashboard.stats.open ?? 0
+        },
+        {
+          key: 'RESOLVED',
+          label: 'Resolved',
+          value: dashboard.stats.resolved ?? 0
+        },
+        {
+          key: 'CLOSED',
+          label: 'Closed',
+          value: dashboard.stats.closed ?? 0
+        }
+      ]
+    : [];
+
+  const filteredTickets = (dashboard?.tickets || []).filter((ticket: Ticket) => {
+    if (activeFilter === 'ALL') return true;
+    if (activeFilter === 'PENDING') {
+      // "pending" should include only:
+      // - assigned: status = ASSIGNED
+      // - unassigned: status = OPEN AND no technician assigned yet (assignedTo is null)
+      return ticket.status === 'ASSIGNED' || (ticket.status === 'OPEN' && !ticket.assignedTo);
+    }
+    return ticket.status === activeFilter;
+  });
+
   if (loading) {
     return (
       <Layout>
@@ -73,11 +120,32 @@ export default function Dashboard() {
 
         {dashboard?.stats && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {Object.entries(dashboard.stats).map(([key, value]) => (
-              <div key={key} className="bg-white rounded-xl shadow-lg p-6 border border-gray-200 hover:shadow-xl transition-shadow">
-                <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">{key.replace(/([A-Z])/g, ' $1').trim()}</div>
-                <div className="text-3xl font-bold text-gray-900 mt-2">{value as number}</div>
-              </div>
+            {[...summaryCards,
+              ...(userRole === 'SUPER_ADMIN'
+                ? [
+                    {
+                      key: 'PENDING',
+                      label: 'Pending',
+                      value: (dashboard?.tickets || []).filter(
+                        (t: Ticket) =>
+                          t.status === 'ASSIGNED' || (t.status === 'OPEN' && !t.assignedTo)
+                      ).length
+                    }
+                  ]
+                : [])].map((card) => (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => setActiveFilter(card.key as any)}
+                className={`text-left rounded-xl shadow-lg p-6 border transition-all ${
+                  activeFilter === card.key
+                    ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50'
+                    : 'bg-white border-gray-200 hover:shadow-xl'
+                }`}
+              >
+                <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">{card.label}</div>
+                <div className="text-3xl font-bold text-gray-900 mt-2">{card.value}</div>
+              </button>
             ))}
           </div>
         )}
@@ -99,7 +167,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {dashboard?.tickets?.map((ticket: Ticket) => (
+                {filteredTickets.map((ticket: Ticket) => (
                   <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{ticket.title}</div>
@@ -135,8 +203,10 @@ export default function Dashboard() {
                 ))}
               </tbody>
             </table>
-            {(!dashboard?.tickets || dashboard.tickets.length === 0) && (
-              <div className="text-center py-12 text-gray-500">No tickets found</div>
+            {filteredTickets.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                No tickets found for {activeFilter === 'ALL' ? 'the selected view' : activeFilter}
+              </div>
             )}
           </div>
         </div>

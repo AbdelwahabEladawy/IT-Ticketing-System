@@ -11,6 +11,8 @@ export interface User {
     name: string;
   };
   status?: 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+  isOnline?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export const setToken = (token: string) => {

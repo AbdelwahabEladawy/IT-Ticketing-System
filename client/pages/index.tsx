@@ -9,12 +9,7 @@ export default function Home() {
     const redirect = async () => {
       const user = await getCurrentUser();
       if (user) {
-        // IT Admin goes to tickets page, others go to dashboard
-        if (user.role === 'IT_ADMIN') {
-          router.push('/tickets');
-        } else {
-          router.push('/dashboard');
-        }
+        router.push('/dashboard');
       } else {
         router.push('/login');
       }
