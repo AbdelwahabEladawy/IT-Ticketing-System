@@ -38,3 +38,7 @@ next-env.d.ts
 server/prisma/migrations/
 
 .env
+
+.next
+/client/.next
+/server/.next

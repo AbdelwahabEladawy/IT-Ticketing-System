@@ -16,7 +16,10 @@ interface Ticket {
   anydeskNumber: string;
   createdAt: string;
   assignedTo?: { name: string } | null;
+<<<<<<< HEAD
   createdBy?: { name: string; email?: string } | null;
+=======
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
   specialization?: { name: string };
 }
 
@@ -26,7 +29,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED' | 'CLOSED' | 'PENDING'>('ALL');
+<<<<<<< HEAD
   const reloadTimerRef = useRef<number | null>(null);
+=======
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
 
   useEffect(() => {
     loadDashboard();
@@ -35,16 +41,24 @@ export default function Dashboard() {
   useEffect(() => {
     const loadRole = async () => {
       const currentUser = await getCurrentUser();
+<<<<<<< HEAD
       const role = currentUser?.role ?? null;
       setUserRole(role);
       if (role === 'USER') {
         setActiveFilter('OPEN');
       }
+=======
+      setUserRole(currentUser?.role ?? null);
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
     };
     loadRole();
   }, []);
 
+<<<<<<< HEAD
   const loadDashboard = async (opts?: { silent?: boolean }) => {
+=======
+  const loadDashboard = async () => {
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
     try {
       const silent = opts?.silent ?? false;
       if (!silent) setLoading(true);
@@ -145,6 +159,42 @@ export default function Dashboard() {
     return ticket.status === activeFilter;
   });
 
+  const summaryCards = dashboard?.stats
+    ? [
+        {
+          key: 'ALL',
+          label: 'Total Tickets',
+          value: dashboard.stats.total ?? dashboard.stats.totalTickets ?? 0
+        },
+        {
+          key: 'OPEN',
+          label: 'Open',
+          value: dashboard.stats.open ?? 0
+        },
+        {
+          key: 'RESOLVED',
+          label: 'Resolved',
+          value: dashboard.stats.resolved ?? 0
+        },
+        {
+          key: 'CLOSED',
+          label: 'Closed',
+          value: dashboard.stats.closed ?? 0
+        }
+      ]
+    : [];
+
+  const filteredTickets = (dashboard?.tickets || []).filter((ticket: Ticket) => {
+    if (activeFilter === 'ALL') return true;
+    if (activeFilter === 'PENDING') {
+      // "pending" should include only:
+      // - assigned: status = ASSIGNED
+      // - unassigned: status = OPEN AND no technician assigned yet (assignedTo is null)
+      return ticket.status === 'ASSIGNED' || (ticket.status === 'OPEN' && !ticket.assignedTo);
+    }
+    return ticket.status === activeFilter;
+  });
+
   if (loading) {
     return (
       <Layout>
@@ -167,7 +217,11 @@ export default function Dashboard() {
                 ? [
                     {
                       key: 'PENDING',
+<<<<<<< HEAD
                       labelKey: 'dashboard.pending',
+=======
+                      label: 'Pending',
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
                       value: (dashboard?.tickets || []).filter(
                         (t: Ticket) =>
                           t.status === 'ASSIGNED' || (t.status === 'OPEN' && !t.assignedTo)
@@ -185,7 +239,11 @@ export default function Dashboard() {
                     : 'bg-white border-gray-200 hover:shadow-xl'
                 }`}
               >
+<<<<<<< HEAD
                 <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">{t((card as any).labelKey)}</div>
+=======
+                <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">{card.label}</div>
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
                 <div className="text-3xl font-bold text-gray-900 mt-2">{card.value}</div>
               </button>
             ))}
@@ -251,12 +309,16 @@ export default function Dashboard() {
             </table>
             {filteredTickets.length === 0 && (
               <div className="text-center py-12 text-gray-500">
+<<<<<<< HEAD
                 {t('dashboard.noTickets', {
                   filter:
                     activeFilter === 'ALL'
                       ? t('dashboard.noTicketsGeneric')
                       : activeFilter
                 })}
+=======
+                No tickets found for {activeFilter === 'ALL' ? 'the selected view' : activeFilter}
+>>>>>>> ee17133c7e591b1a6a0a00bede4252ea297c826a
               </div>
             )}
           </div>

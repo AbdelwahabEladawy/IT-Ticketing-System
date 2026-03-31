@@ -1,23 +1,13 @@
-import type { AppProps } from "next/app";
-import "../styles/globals.css";
-import "../i18n";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/router";
-import { I18nextProvider, useTranslation } from "react-i18next";
-import i18n from "../i18n";
-import { LOCALE_STORAGE_KEY } from "../i18n";
-import { getCurrentUser, User } from "../utils/auth";
-import { startPresence, stopPresence } from "../utils/presence";
-import { applyDocumentLanguage, type AppLocale } from "../utils/locale";
-import { useClientMounted } from "../hooks/useClientMounted";
+import type { AppProps } from 'next/app';
+import '../styles/globals.css';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import { getCurrentUser } from '../utils/auth';
 
-function AppInner({ Component, pageProps }: AppProps) {
+export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
-  const clientMounted = useClientMounted();
-  const { t } = useTranslation();
-  const localeSyncedRef = useRef(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const init = async () => {
@@ -53,7 +43,8 @@ function AppInner({ Component, pageProps }: AppProps) {
         stopPresence();
       }
 
-      const publicPages = ["/login", "/signup"];
+      // Redirect to login if not authenticated and not on public pages
+      const publicPages = ['/login', '/signup'];
       if (!currentUser && !publicPages.includes(router.pathname)) {
         router.push("/login");
       }
@@ -79,10 +70,3 @@ function AppInner({ Component, pageProps }: AppProps) {
   return <Component {...pageProps} />;
 }
 
-export default function App(props: AppProps) {
-  return (
-    <I18nextProvider i18n={i18n}>
-      <AppInner {...props} />
-    </I18nextProvider>
-  );
-}
