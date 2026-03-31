@@ -6,6 +6,7 @@ import { LOCALE_STORAGE_KEY } from "../i18n";
 import { getCurrentUser, User } from "../utils/auth";
 import { startPresence, stopPresence } from "../utils/presence";
 import { applyDocumentLanguage, type AppLocale } from "../utils/locale";
+import { useClientMounted } from "../hooks/useClientMounted";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { I18nextProvider, useTranslation } from "react-i18next";
@@ -16,6 +17,7 @@ function AppInner({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const clientMounted = useClientMounted();
   const { t } = useTranslation();
   const localeSyncedRef = useRef(false);
 
@@ -74,7 +76,7 @@ function AppInner({ Component, pageProps }: AppProps) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         <span className="sr-only">
-          {t("common.loading")}
+          {clientMounted ? t("common.loading") : "Loading..."}
         </span>
       </div>
     );
