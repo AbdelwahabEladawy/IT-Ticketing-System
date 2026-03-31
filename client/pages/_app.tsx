@@ -1,18 +1,30 @@
-import type { AppProps } from 'next/app';
-import '../styles/globals.css';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
-import { getCurrentUser } from '../utils/auth';
+import type { AppProps } from "next/app";
+import "../styles/globals.css";
 
-export default function App({ Component, pageProps }: AppProps) {
+import i18n from "../i18n";
+import { LOCALE_STORAGE_KEY } from "../i18n";
+import { getCurrentUser, User } from "../utils/auth";
+import { startPresence, stopPresence } from "../utils/presence";
+import { applyDocumentLanguage, type AppLocale } from "../utils/locale";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/router";
+import { I18nextProvider, useTranslation } from "react-i18next";
+
+
+
+function AppInner({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
+  const { t } = useTranslation();
+  const localeSyncedRef = useRef(false);
+
 
   useEffect(() => {
     const init = async () => {
       const currentUser = await getCurrentUser();
       setUser(currentUser);
+
 
       if (!currentUser) {
         localeSyncedRef.current = false;
@@ -44,7 +56,8 @@ export default function App({ Component, pageProps }: AppProps) {
       }
 
       // Redirect to login if not authenticated and not on public pages
-      const publicPages = ['/login', '/signup'];
+
+      const publicPages = ["/login", "/signup"];
       if (!currentUser && !publicPages.includes(router.pathname)) {
         router.push("/login");
       }
@@ -61,7 +74,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         <span className="sr-only">
-          {clientMounted ? t("common.loading") : "Loading..."}
+          {t("common.loading")}
         </span>
       </div>
     );
@@ -70,3 +83,11 @@ export default function App({ Component, pageProps }: AppProps) {
   return <Component {...pageProps} />;
 }
 
+
+export default function App(props: AppProps) {
+  return (
+    <I18nextProvider i18n={i18n}>
+      <AppInner {...props} />
+    </I18nextProvider>
+  );
+}
