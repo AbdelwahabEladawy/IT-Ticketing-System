@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    
+
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
@@ -60,13 +60,13 @@ export const checkPermission = (permission) => {
 
     const permissions = {
       USER: ['create_ticket'],
-      TECHNICIAN: ['update_ticket_status'],
-      IT_ADMIN: ['assign_custom_ticket', 'change_technician_status', 'view_custom_tickets', 'reassign_ticket', 'update_ticket_status'],
-      IT_MANAGER: ['create_ticket', 'reassign_ticket', 'change_technician_status', 'add_specialization', 'add_user', 'add_technician', 'add_admin', 'view_all_tickets']
+      TECHNICIAN: ['create_ticket', 'update_ticket_status'],
+      IT_ADMIN: ['create_ticket', 'update_ticket_status'],
+      IT_MANAGER: ['create_ticket', 'add_specialization', 'add_user', 'add_technician', 'add_admin', 'view_all_tickets']
     };
 
     const userPermissions = permissions[req.user.role] || [];
-    
+
     if (!userPermissions.includes(permission)) {
       return res.status(403).json({ error: 'Permission denied' });
     }

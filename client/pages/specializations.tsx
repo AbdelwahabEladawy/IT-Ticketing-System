@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 
 export default function Specializations() {
+  const { t } = useTranslation();
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -100,7 +102,7 @@ export default function Specializations() {
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Technicians</th>
+                  <th className="px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('specializations.colEngineers')}</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tickets</th>
                 </tr>
               </thead>

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { useTranslation } from 'react-i18next';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
 import { getCurrentUser } from '../../utils/auth';
 
 export default function CreateUser() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [formData, setFormData] = useState({
     name: '',
@@ -52,7 +54,7 @@ export default function CreateUser() {
 
       if (formData.role === 'TECHNICIAN' || formData.role === 'IT_ADMIN') {
         if (!formData.specializationId) {
-          setError('Specialization is required for technicians and IT admins');
+          setError(t('users.specRequiredEngineers'));
           setLoading(false);
           return;
         }
@@ -69,7 +71,7 @@ export default function CreateUser() {
     } catch (err: any) {
       console.error('Create user error:', err.response?.data);
       
-      let errorMessage = 'Failed to create user';
+      let errorMessage = t('users.createFailed');
       
       if (err.response?.data?.error) {
         errorMessage = err.response.data.error;
@@ -88,7 +90,7 @@ export default function CreateUser() {
   return (
     <Layout>
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Create New User</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">{t('users.createTitle')}</h1>
 
         {error && (
           <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded">
@@ -99,7 +101,7 @@ export default function CreateUser() {
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Full Name
+              {t('users.fullName')}
             </label>
             <input
               type="text"
@@ -113,7 +115,7 @@ export default function CreateUser() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email
+              {t('login.email')}
             </label>
             <input
               type="email"
@@ -127,7 +129,7 @@ export default function CreateUser() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
+              {t('users.password')}
             </label>
             <input
               type="password"
@@ -142,21 +144,24 @@ export default function CreateUser() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Role
+              {t('users.role')}
             </label>
             <select
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value, specializationId: '' })}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
             >
-              <option value="USER">User</option>
-              <option value="TECHNICIAN">Technician</option>
-              <option value="IT_ADMIN">IT Admin</option>
+              <option value="USER">{t('roles.USER')}</option>
+              <option value="TECHNICIAN">{t('roles.TECHNICIAN')}</option>
+              <option value="IT_ADMIN">{t('roles.IT_ADMIN')}</option>
               {(user?.role === 'SUPER_ADMIN' || user?.role === 'IT_MANAGER') && (
                 <>
-                  <option value="IT_MANAGER">IT Manager</option>
+                  <option value="IT_MANAGER">{t('roles.IT_MANAGER')}</option>
                   {user?.role === 'SUPER_ADMIN' && (
-                    <option value="SUPER_ADMIN">Super Admin</option>
+                    <>
+                      <option value="SUPER_ADMIN">{t('roles.SUPER_ADMIN')}</option>
+                      <option value="SOFTWARE_ENGINEER">{t('roles.SOFTWARE_ENGINEER')}</option>
+                    </>
                   )}
                 </>
               )}
@@ -166,7 +171,7 @@ export default function CreateUser() {
           {(formData.role === 'TECHNICIAN' || formData.role === 'IT_ADMIN') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Specialization
+                {t('users.colSpecialization')}
               </label>
               <select
                 value={formData.specializationId}
@@ -174,7 +179,7 @@ export default function CreateUser() {
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
               >
-                <option value="">Select specialization</option>
+                <option value="">{t('users.selectSpecialization')}</option>
                 {specializations.map((spec) => (
                   <option key={spec.id} value={spec.id}>
                     {spec.name}
@@ -184,20 +189,20 @@ export default function CreateUser() {
             </div>
           )}
 
-          <div className="flex space-x-4">
+          <div className="flex gap-4 flex-wrap">
             <button
               type="submit"
               disabled={loading}
               className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-3 rounded-lg font-medium hover:from-indigo-700 hover:to-blue-700 transition-all disabled:opacity-50 shadow-lg hover:shadow-xl"
             >
-              {loading ? 'Creating...' : 'Create User'}
+              {loading ? t('users.creating') : t('users.createUser')}
             </button>
             <button
               type="button"
               onClick={() => router.back()}
               className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              Cancel
+              {t('users.cancel')}
             </button>
           </div>
         </form>

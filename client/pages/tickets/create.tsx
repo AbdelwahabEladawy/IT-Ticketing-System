@@ -1,23 +1,26 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import Layout from '../../components/Layout';
-import api from '../../utils/api';
-import { getCurrentUser } from '../../utils/auth';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import { useTranslation } from "react-i18next";
+import Layout from "../../components/Layout";
+import api from "../../utils/api";
+import { getCurrentUser } from "../../utils/auth";
 
 export default function CreateTicket() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    anydeskNumber: '',
-    issueType: '', // Issue type selection (required)
-    specializationId: ''
+    title: "",
+    description: "",
+    anydeskNumber: "",
+    issueType: "",
+    specializationId: "",
   });
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [issueTypes, setIssueTypes] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [anydeskError, setAnydeskError] = useState("");
 
   useEffect(() => {
     loadUser();
@@ -28,80 +31,92 @@ export default function CreateTicket() {
   const loadUser = async () => {
     const currentUser = await getCurrentUser();
     setUser(currentUser);
-    // IT Admin cannot create tickets
-    if (currentUser?.role === 'IT_ADMIN') {
-      router.push('/dashboard');
+    if (currentUser?.role === "IT_ADMIN") {
+      router.push("/dashboard");
     }
   };
 
   const loadSpecializations = async () => {
     try {
-      const response = await api.get('/specializations');
+      const response = await api.get("/specializations");
       setSpecializations(response.data.specializations);
     } catch (error) {
-      console.error('Failed to load specializations');
+      console.error("Failed to load specializations");
     }
   };
 
   const loadIssueTypes = async () => {
     try {
-      const response = await api.get('/issue-types');
+      const response = await api.get("/issue-types");
       setIssueTypes(response.data);
     } catch (error) {
-      console.error('Failed to load issue types');
+      console.error("Failed to load issue types");
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
+    if (anydeskError) {
+      setError(t("ticketCreate.anydeskInvalid"));
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Determine problemType based on issueType
-      let problemType = 'CUSTOM'; // Default to CUSTOM
-      if (formData.issueType && formData.issueType !== 'CUSTOM') {
-        problemType = 'PREDEFINED'; // If issue type selected (not CUSTOM), it's PREDEFINED
-      }
+      const problemType = formData.issueType ? "PREDEFINED" : "CUSTOM";
 
       const payload: any = {
         title: formData.title,
         description: formData.description,
         anydeskNumber: formData.anydeskNumber,
         problemType: problemType,
-        issueType: formData.issueType || null // Include issueType if selected
+        issueType: formData.issueType || null,
       };
 
-      // If issue type is selected and not CUSTOM, routing will be automatic
-      // If issueType is CUSTOM or empty, it will go to IT Admin team
-      if (formData.issueType && formData.issueType !== 'CUSTOM') {
-        // Issue type selected - routing will be automatic, no need for specializationId
-      } else if (!formData.issueType || formData.issueType === 'CUSTOM') {
-        // Custom problem - will go to IT Admin team automatically
-        payload.issueType = 'CUSTOM'; // Explicitly set to CUSTOM
-      }
-
-      await api.post('/tickets', payload);
-      router.push('/dashboard');
+      await api.post("/tickets", payload);
+      router.push("/dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create ticket');
+      setError(err.response?.data?.error || t("ticketCreate.createFailed"));
     } finally {
       setLoading(false);
     }
   };
 
   const handleIssueTypeChange = (value: string) => {
-    setFormData({ 
-      ...formData, 
+    setFormData({
+      ...formData,
       issueType: value,
-      specializationId: '' // Clear specializationId - routing will be automatic
+      specializationId: "",
     });
+  };
+
+  const handleAnydeskChange = (value: string) => {
+    // Allow only digits and limit to 10 characters
+    const filteredValue = value.replace(/\D/g, '').slice(0, 10);
+    
+    if (filteredValue.length > 0 && (filteredValue.length < 9 || filteredValue.length > 10)) {
+      setAnydeskError(t("ticketCreate.anydeskInvalid"));
+    } else {
+      setAnydeskError("");
+    }
+    
+    setFormData({ ...formData, anydeskNumber: filteredValue });
   };
 
   return (
     <Layout>
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Create New Ticket</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">
+          {t("ticketCreate.title")}
+        </h1>
+        {user && user.role !== "USER" && (
+          <p className="mb-4 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3">
+            {t("ticketCreate.engineerHint")}
+          </p>
+        )}
 
         {error && (
           <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded">
@@ -109,53 +124,65 @@ export default function CreateTicket() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200"
+        >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Title
+              {t("ticketCreate.titleLabel")}
             </label>
             <input
               type="text"
               value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, title: e.target.value })
+              }
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-              placeholder="Enter ticket title"
+              placeholder={t("ticketCreate.titlePlaceholder")}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description
+              {t("ticketCreate.description")}
             </label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, description: e.target.value })
+              }
               required
               rows={6}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-              placeholder="Describe the issue..."
+              placeholder={t("ticketCreate.descriptionPlaceholder")}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Anydesk Number
+              {t("ticketCreate.anydesk")}
             </label>
             <input
               type="text"
               value={formData.anydeskNumber}
-              onChange={(e) => setFormData({ ...formData, anydeskNumber: e.target.value })}
+              onChange={(e) => handleAnydeskChange(e.target.value)}
+              required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-              placeholder="Enter Anydesk number (optional)"
+              placeholder={t("ticketCreate.anydeskPlaceholder")}
             />
-            <p className="mt-1 text-sm text-gray-500">Enter your Anydesk number for remote access support</p>
+            {anydeskError && (
+              <p className="mt-1 text-sm text-red-600">{anydeskError}</p>
+            )}
+            <p className="mt-1 text-sm text-gray-500">
+              {t("ticketCreate.anydeskHint")}
+            </p>
           </div>
 
-          {/* Issue Type Selection - Required */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Issue Type <span className="text-red-500">*</span>
+              {t("ticketCreate.issueType")} <span className="text-red-500">*</span>
             </label>
             <select
               value={formData.issueType}
@@ -163,24 +190,25 @@ export default function CreateTicket() {
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
             >
-              <option value="">Select issue type</option>
-              <option value="CUSTOM">Custom Problem</option>
-              {issueTypes?.issueTypesByTeam && Object.entries(issueTypes.issueTypesByTeam).map(([team, issues]: [string, any]) => (
-                <optgroup key={team} label={team}>
-                  {issues.map((issue: string) => (
-                    <option key={issue} value={issue}>
-                      {issue}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+              <option value="">{t("ticketCreate.selectIssueType")}</option>
+
+              {issueTypes?.issueTypesByTeam &&
+                Object.entries(issueTypes.issueTypesByTeam).map(
+                  ([team, issues]: [string, any]) => (
+                    <optgroup key={team} label={team}>
+                      {issues.map((issue: string) => (
+                        <option key={issue} value={issue}>
+                          {issue}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ),
+                )}
             </select>
             <p className="mt-1 text-sm text-gray-500">
-              {formData.issueType === 'CUSTOM' 
-                ? 'This ticket will be sent to IT Admin team for review and assignment'
-                : formData.issueType 
-                ? 'Ticket will be automatically routed to the appropriate team'
-                : 'Select an issue type to route your ticket to the correct team'}
+              {formData.issueType
+                ? t("ticketCreate.issueTypeHint")
+                : t("ticketCreate.issueTypeHintSelect")}
             </p>
           </div>
 
@@ -190,14 +218,14 @@ export default function CreateTicket() {
               disabled={loading}
               className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-3 rounded-lg font-medium hover:from-indigo-700 hover:to-blue-700 transition-all disabled:opacity-50 shadow-lg hover:shadow-xl"
             >
-              {loading ? 'Creating...' : 'Create Ticket'}
+              {loading ? t("ticketCreate.creating") : t("ticketCreate.submit")}
             </button>
             <button
               type="button"
               onClick={() => router.back()}
               className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              Cancel
+              {t("ticketCreate.cancel")}
             </button>
           </div>
         </form>

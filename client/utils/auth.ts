@@ -5,12 +5,15 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'USER' | 'TECHNICIAN' | 'IT_ADMIN' | 'IT_MANAGER' | 'SUPER_ADMIN';
+  role: 'USER' | 'TECHNICIAN' | 'IT_ADMIN' | 'IT_MANAGER' | 'SUPER_ADMIN' | 'SOFTWARE_ENGINEER';
+  preferredLocale?: 'en' | 'ar';
   specialization?: {
     id: string;
     name: string;
   };
   status?: 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+  isOnline?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export const setToken = (token: string) => {

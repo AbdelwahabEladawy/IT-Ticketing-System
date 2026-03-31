@@ -2,81 +2,50 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const assignTicketRoundRobin = async (specializationId, excludeTechnicianId = null) => {
-  // Get all available technicians for this specialization
-  // Include both TECHNICIAN and IT_ADMIN roles (IT_ADMIN can also handle tickets)
-  const whereClause = {
-    role: { in: ['TECHNICIAN', 'IT_ADMIN'] },
-    specializationId: specializationId,
-    status: 'AVAILABLE'
-  };
-  
-  if (excludeTechnicianId) {
-    whereClause.id = { not: excludeTechnicianId };
-  }
-  
-  const technicians = await prisma.user.findMany({
-    where: whereClause,
-    orderBy: {
-      createdAt: 'asc' // Simple round-robin based on creation order
-    }
-  });
+// In-memory pointer for round-robin within each specialization.
+// Note: not shared across multiple server instances; for multi-instance deployments
+// you should persist the pointer in the database.
+const nextIndexBySpecialization = new Map();
+const rrLocks = new Map();
 
-  if (technicians.length === 0) {
-    // If no available technicians, try busy ones
-    const busyWhereClause = {
-      role: { in: ['TECHNICIAN', 'IT_ADMIN'] },
-      specializationId: specializationId,
-      status: 'BUSY'
-    };
-    
-    if (excludeTechnicianId) {
-      busyWhereClause.id = { not: excludeTechnicianId };
-    }
-    
-    const busyTechnicians = await prisma.user.findMany({
-      where: busyWhereClause,
-      orderBy: {
-        createdAt: 'asc'
-      }
+const withRoundRobinLock = async (specializationId, fn) => {
+  const prev = rrLocks.get(specializationId) || Promise.resolve();
+  let release;
+  const next = new Promise((resolve) => {
+    release = resolve;
+  });
+  rrLocks.set(specializationId, prev.then(() => next));
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (rrLocks.get(specializationId) === next) rrLocks.delete(specializationId);
+  }
+};
+
+export const assignTicketRoundRobin = async (specializationId, excludeTechnicianId = null) => {
+  if (!specializationId) return null;
+
+  return withRoundRobinLock(specializationId, async () => {
+    const technicians = await prisma.user.findMany({
+      where: {
+        role: { in: ['TECHNICIAN', 'IT_ADMIN'] },
+        specializationId,
+        isOnline: true,
+        ...(excludeTechnicianId ? { id: { not: excludeTechnicianId } } : {})
+      },
+      orderBy: { createdAt: 'asc' }
     });
 
-    if (busyTechnicians.length === 0) {
-      return null; // No technicians available
-    }
+    if (technicians.length === 0) return null;
 
-    // Get the technician with the least assigned tickets
-    const technicianWithCounts = await Promise.all(
-      busyTechnicians.map(async (tech) => {
-        const count = await prisma.ticket.count({
-          where: {
-            assignedToId: tech.id,
-            status: { not: 'CLOSED' }
-          }
-        });
-        return { ...tech, ticketCount: count };
-      })
-    );
+    const currentIndex = nextIndexBySpecialization.get(specializationId) ?? 0;
+    const picked = technicians[currentIndex % technicians.length];
 
-    technicianWithCounts.sort((a, b) => a.ticketCount - b.ticketCount);
-    return technicianWithCounts[0];
-  }
-
-  // Get ticket counts for available technicians
-  const technicianWithCounts = await Promise.all(
-    technicians.map(async (tech) => {
-      const count = await prisma.ticket.count({
-        where: {
-          assignedToId: tech.id,
-          status: { not: 'CLOSED' }
-        }
-      });
-      return { ...tech, ticketCount: count };
-    })
-  );
-
-  // Sort by ticket count (round-robin with load balancing)
-  technicianWithCounts.sort((a, b) => a.ticketCount - b.ticketCount);
-  return technicianWithCounts[0];
+    // Advance pointer for next assignment.
+    nextIndexBySpecialization.set(specializationId, currentIndex + 1);
+    return picked;
+  });
 };
 

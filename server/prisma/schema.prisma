@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
     provider = "postgresql"
-    url      = env("DATABASE_URL")
+    url      = "postgresql://neondb_owner:npg_9LpOfFrauNG3@ep-young-bread-abf15kjx-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 }
 
 enum UserRole {
@@ -16,6 +16,7 @@ enum UserRole {
     IT_ADMIN
     IT_MANAGER
     SUPER_ADMIN
+    SOFTWARE_ENGINEER
 } 
 
 enum TicketStatus {
@@ -24,12 +25,25 @@ enum TicketStatus {
     IN_PROGRESS
     RESOLVED
     CLOSED
+    USER_ACTION_NEEDED
 }
 
 enum TechnicianStatus {
     AVAILABLE
     BUSY
     OFFLINE
+}
+
+enum TicketMessageType {
+    ACTION_REQUEST
+    USER_REPLY
+    /// User follow-up after resolution (same thread as other ticket messages)
+    RESOLVED_COMMENT
+}
+
+enum SuggestionStatus {
+    UNSEEN
+    SEEN
 }
 
 enum ProblemType {
@@ -46,19 +60,35 @@ model User {
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
+    // If true, the user must change the password on first login (e.g., bulk imports)
+    mustChangePassword Boolean @default(false)
+
+    /// UI language: "en" | "ar" (notifications + client sync)
+    preferredLocale String @default("en")
+
     // Technician specific fields
     specializationId String?
     specialization   Specialization?   @relation(fields: [specializationId], references: [id])
     status           TechnicianStatus? @default(AVAILABLE)
+    isOnline         Boolean           @default(false)
+    lastSeenAt       DateTime?
+    presenceUpdatedAt DateTime?
+    presenceSessionId String?
 
     // Relations
     createdTickets  Ticket[]   @relation("CreatedBy")
     assignedTickets Ticket[]   @relation("AssignedTo")
+    ticketMessagesAuthored TicketMessage[] @relation("TicketMessageAuthor")
+    ticketMessagesReceived TicketMessage[] @relation("TicketMessageRecipient")
     auditLogs       AuditLog[]
+    suggestions     Suggestion[]
+    notifications   Notification[]
 
     @@index([email])
     @@index([role])
     @@index([specializationId])
+    @@index([specializationId, isOnline])
+    @@index([lastSeenAt])
 }
 
 model Specialization {
@@ -103,6 +133,7 @@ model Ticket {
     specialization   Specialization? @relation(fields: [specializationId], references: [id])
 
     auditLogs AuditLog[]
+    messages  TicketMessage[]
 
     @@index([createdById])
     @@index([assignedToId])
@@ -134,6 +165,7 @@ model AuditLog {
 model Notification {
     id        String   @id @default(cuid())
     userId    String
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
     title     String
     message   String
     type      String   @default("info") // info, warning, success, error
@@ -141,8 +173,69 @@ model Notification {
     createdAt DateTime @default(now())
 
     ticketId String?
+    suggestionId String?
+    suggestion   Suggestion? @relation(fields: [suggestionId], references: [id], onDelete: SetNull)
 
     @@index([userId])
     @@index([read])
+    @@index([createdAt])
+    @@index([suggestionId])
+}
+
+model Suggestion {
+    id          String           @id @default(cuid())
+    title       String
+    description String
+    status      SuggestionStatus @default(UNSEEN)
+    createdById String
+    createdBy   User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+    createdAt   DateTime         @default(now())
+    updatedAt   DateTime         @updatedAt
+
+    notifications Notification[]
+
+    @@index([createdById])
+    @@index([status])
+    @@index([createdAt])
+}
+
+model TicketMessage {
+    id        String             @id @default(cuid())
+    ticketId  String
+    ticket    Ticket             @relation(fields: [ticketId], references: [id])
+
+    // Message author (engineer or user)
+    authorId String
+    author   User               @relation("TicketMessageAuthor", fields: [authorId], references: [id])
+
+    // Recipient for realtime delivery and UI filtering
+    toUserId String
+    toUser   User               @relation("TicketMessageRecipient", fields: [toUserId], references: [id])
+
+    // Threading: action request has parentId = null; replies reference the request id
+    parentId String?
+    parent   TicketMessage?    @relation("TicketMessageThread", fields: [parentId], references: [id])
+    children TicketMessage[]   @relation("TicketMessageThread")
+
+    type      TicketMessageType
+    body      String
+    createdAt DateTime           @default(now())
+
+    @@index([ticketId, createdAt])
+    @@index([toUserId, createdAt])
+    @@index([authorId])
+    @@index([parentId])
+    @@index([type])
+}
+
+model RebalanceJob {
+    id            String   @id @default(cuid())
+    specializationId String
+    trigger       String
+    status        String   @default("PENDING")
+    createdAt     DateTime @default(now())
+    processedAt   DateTime?
+
+    @@index([specializationId, status])
     @@index([createdAt])
 }

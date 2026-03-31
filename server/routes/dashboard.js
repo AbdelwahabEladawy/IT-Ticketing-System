@@ -13,7 +13,7 @@ router.get('/', authenticate, async (req, res) => {
     let dashboardData = {};
 
     if (user.role === 'USER') {
-      // User dashboard: their tickets with SLA
+      // User dashboard: all tickets they created + full stats for filters
       const tickets = await prisma.ticket.findMany({
         where: { createdById: user.id },
         include: {
@@ -56,6 +56,7 @@ router.get('/', authenticate, async (req, res) => {
         })),
         stats: {
           total: tickets.length,
+          open: tickets.filter(t => t.status === 'OPEN').length,
           assigned: tickets.filter(t => t.status === 'ASSIGNED').length,
           inProgress: tickets.filter(t => t.status === 'IN_PROGRESS').length,
           resolved: tickets.filter(t => t.status === 'RESOLVED').length,
@@ -76,7 +77,6 @@ router.get('/', authenticate, async (req, res) => {
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
           assignedTo: {
-            select: { id: true, name: true, email: true },
             include: { specialization: true }
           },
           specialization: true
@@ -137,7 +137,7 @@ router.get('/', authenticate, async (req, res) => {
           id: tech.id,
           name: tech.name,
           email: tech.email,
-          status: tech.status,
+          status: tech.isOnline ? 'ONLINE' : 'OFFLINE',
           specialization: tech.specialization,
           activeTickets: tech._count.assignedTickets
         })),
@@ -149,7 +149,7 @@ router.get('/', authenticate, async (req, res) => {
           closed: tickets.filter(t => t.status === 'CLOSED').length,
           overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length,
           totalTechnicians: technicians.length,
-          availableTechnicians: technicians.filter(t => t.status === 'AVAILABLE').length
+          availableTechnicians: technicians.filter(t => t.isOnline).length
         }
       };
     } else if (user.role === 'SUPER_ADMIN') {
@@ -196,7 +196,7 @@ router.get('/', authenticate, async (req, res) => {
           id: tech.id,
           name: tech.name,
           email: tech.email,
-          status: tech.status,
+          status: tech.isOnline ? 'ONLINE' : 'OFFLINE',
           specialization: tech.specialization,
           activeTickets: tech._count.assignedTickets
         })),
@@ -209,7 +209,7 @@ router.get('/', authenticate, async (req, res) => {
           closed: tickets.filter(t => t.status === 'CLOSED').length,
           overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length,
           totalTechnicians: technicians.length,
-          availableTechnicians: technicians.filter(t => t.status === 'AVAILABLE').length,
+          availableTechnicians: technicians.filter(t => t.isOnline).length,
           totalUsers: allUsers.length
         }
       };

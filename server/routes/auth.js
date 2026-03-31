@@ -5,6 +5,7 @@ import { body, validationResult } from 'express-validator';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { markOnline } from '../services/presenceService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -99,6 +100,7 @@ router.post('/login', [
     }
 
     await createAuditLog('USER_LOGIN', `User ${user.name} logged in`, user.id);
+    await markOnline(user.id, null, true);
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
@@ -114,7 +116,10 @@ router.post('/login', [
         name: user.name,
         role: user.role,
         specialization: user.specialization,
-        status: user.status
+        status: user.status,
+        mustChangePassword: user.mustChangePassword,
+        isOnline: true,
+        preferredLocale: user.preferredLocale || 'en'
       }
     });
   } catch (error) {
@@ -139,12 +144,89 @@ router.get('/me', authenticate, async (req, res) => {
       role: user.role,
       specialization: user.specialization,
       status: user.status,
-      createdAt: user.createdAt
+      mustChangePassword: user.mustChangePassword,
+      isOnline: user.isOnline,
+      createdAt: user.createdAt,
+      preferredLocale: user.preferredLocale || 'en'
     };
 
     res.json({ user: userData });
   } catch (error) {
     console.error('Get user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.patch(
+  '/locale',
+  authenticate,
+  [body('locale').isIn(['en', 'ar']).withMessage('locale must be en or ar')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      const { locale } = req.body;
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { preferredLocale: locale }
+      });
+      res.json({ preferredLocale: locale });
+    } catch (error) {
+      console.error('Locale update error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// Force password change (used by bulk-imported accounts)
+router.patch('/change-password', authenticate, [
+  body('newPassword').trim().isLength({ min: 6 }).withMessage('New password must be at least 6 chars')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { newPassword } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: false
+      },
+      include: { specialization: true }
+    });
+
+    await createAuditLog(
+      'USER_PASSWORD_CHANGED',
+      `User ${updated.name} changed password (forced flow).`,
+      updated.id
+    );
+
+    res.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        specialization: updated.specialization,
+        status: updated.status,
+        mustChangePassword: updated.mustChangePassword,
+        isOnline: updated.isOnline,
+        preferredLocale: updated.preferredLocale || 'en'
+      }
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

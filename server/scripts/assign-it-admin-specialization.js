@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 async function assignSpecialization() {
   try {
     console.log('🔍 Finding IT Admin specialization...');
-    
+
     const itAdminSpec = await prisma.specialization.findUnique({
       where: { name: 'IT Admin' }
     });
@@ -24,7 +24,7 @@ async function assignSpecialization() {
         }
       });
       console.log('✅ Created IT Admin specialization');
-      
+
       // Update IT_ADMIN users
       const result = await prisma.user.updateMany({
         where: {
@@ -36,11 +36,11 @@ async function assignSpecialization() {
           status: 'AVAILABLE'
         }
       });
-      
+
       console.log(`✅ Updated ${result.count} IT_ADMIN users with IT Admin specialization`);
     } else {
       console.log('✅ Found IT Admin specialization (ID: ' + itAdminSpec.id + ')');
-      
+
       // Update IT_ADMIN users without specialization
       const result = await prisma.user.updateMany({
         where: {
@@ -52,7 +52,7 @@ async function assignSpecialization() {
           status: 'AVAILABLE'
         }
       });
-      
+
       console.log(`✅ Updated ${result.count} IT_ADMIN users with IT Admin specialization`);
     }
 

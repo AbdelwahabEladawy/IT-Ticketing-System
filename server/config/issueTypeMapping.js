@@ -10,27 +10,17 @@
  */
 
 export const ISSUE_TYPE_MAPPING = {
+  // Network Engineer Issues
+  'Network / Internet Issue': 'Network',
+
   // IT Help Desk Issues
-  'Access & Accounts': 'Help Desk',
-  'Software installation': 'Help Desk',
-  'License activation / expired': 'Help Desk',
-  'Application Error or crash': 'Help Desk',
-  'Device Issues': 'Help Desk',
+  'Hardware / Software': 'Help Desk',
 
   // IT Admin Issues
-  'New laptop request': 'IT Admin',
-  'Laptop replacement': 'IT Admin',
-  'Accessory request (mouse / headset / bag)': 'IT Admin',
-  'Asset return (resignation)': 'IT Admin',
-  'Reports & Management': 'IT Admin',
-  'New employee IT setup': 'IT Admin',
-  'Employee exit clearance': 'IT Admin',
-
-  // Network Engineer Issues
-  'Slow internet': 'Network',
-  'WiFi disconnecting': 'Network',
-  'LAN port not working': 'Network',
-  'Router issue': 'Network',
+  'Request Laptop': 'IT Admin',
+  'Request Accessories': 'IT Admin',
+  'Request Report and Management Docs': 'IT Admin',
+  'Custom Problem': 'IT Admin',
 };
 
 /**
@@ -38,27 +28,17 @@ export const ISSUE_TYPE_MAPPING = {
  * Used for UI display
  */
 export const ISSUE_TYPES_BY_TEAM = {
+  'Network Engineer': [
+    'Network / Internet Issue',
+  ],
   'IT Help Desk': [
-    'Access & Accounts',
-    'Software installation',
-    'License activation / expired',
-    'Application Error or crash',
-    'Device Issues',
+    'Hardware / Software',
   ],
   'IT Admin': [
-    'New laptop request',
-    'Laptop replacement',
-    'Accessory request (mouse / headset / bag)',
-    'Asset return (resignation)',
-    'Reports & Management',
-    'New employee IT setup',
-    'Employee exit clearance',
-  ],
-  'Network Engineer': [
-    'Slow internet',
-    'WiFi disconnecting',
-    'LAN port not working',
-    'Router issue',
+    'Request Laptop',
+    'Request Accessories',
+    'Request Report and Management Docs',
+    'Custom Problem',
   ],
 };
 

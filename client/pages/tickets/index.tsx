@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
+import { useTranslation } from 'react-i18next';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
-import { format } from 'date-fns';
+import { connectTicketMessages, disconnectTicketMessages } from '../../utils/ticketMessages';
+import { formatTicketStatusLabel as formatStatus } from '../../utils/ticketStatusLabel';
 
 interface Ticket {
   id: string;
@@ -13,29 +15,66 @@ interface Ticket {
   slaDeadline: string;
   slaStatus: string;
   assignedTo?: { name: string };
-  createdBy?: { name: string };
+  createdBy?: { name: string; email?: string };
   specialization?: { name: string };
 }
 
 export default function Tickets() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const reloadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadTickets();
   }, []);
 
-  const loadTickets = async () => {
+  const loadTickets = async (opts?: { silent?: boolean }) => {
     try {
+      const silent = opts?.silent ?? false;
+      if (!silent) setLoading(true);
+      setError(null);
       const response = await api.get('/tickets');
       setTickets(response.data.tickets);
-    } catch (error) {
+    } catch (err: any) {
       console.error('Failed to load tickets');
+      setError(err?.response?.data?.error || t('tickets.loadFailed'));
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
+
+  const scheduleTicketsReload = () => {
+    if (typeof window === 'undefined') return;
+    if (reloadTimerRef.current) return;
+
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      loadTickets({ silent: true });
+    }, 300);
+  };
+
+  useEffect(() => {
+    const onPayload = (payload: any) => {
+      if (!payload || payload.type !== 'ticket_list_updated') return;
+      scheduleTicketsReload();
+    };
+
+    connectTicketMessages(onPayload);
+
+    return () => {
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current);
+        reloadTimerRef.current = null;
+      }
+      disconnectTicketMessages(onPayload);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const formatTicketStatusLabel = (status: string) => formatStatus(status, t);
 
   const getStatusColor = (status: string) => {
     const colors: { [key: string]: string } = {
@@ -43,7 +82,8 @@ export default function Tickets() {
       ASSIGNED: 'bg-blue-100 text-blue-800',
       IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
       RESOLVED: 'bg-green-100 text-green-800',
-      CLOSED: 'bg-gray-100 text-gray-800'
+      CLOSED: 'bg-gray-100 text-gray-800',
+      USER_ACTION_NEEDED: 'bg-red-100 text-red-800 border border-red-200'
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
@@ -61,65 +101,69 @@ export default function Tickets() {
   return (
     <Layout>
       <div className="px-4 py-6">
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>
+        )}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Tickets</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{t('tickets.title')}</h1>
           <button
             onClick={() => router.push('/tickets/create')}
             className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl"
           >
-            Create Ticket
+            {t('tickets.createTicket')}
           </button>
         </div>
 
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div className="overflow-x-auto overscroll-x-contain">
+            <table className="min-w-full w-full table-auto divide-y divide-gray-200 text-start">
               <thead className="bg-gradient-to-r from-indigo-50 to-blue-50">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Title</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Anydesk Number</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">SLA</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Technician</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colTitle')}</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colStatus')}</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colAnydesk')}</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colCustomer')}</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colEngineer')}</th>
+                  <th className="px-4 sm:px-6 py-4 text-start text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">{t('tickets.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {tickets.map((ticket) => (
                   <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{ticket.title}</div>
-                      <div className="text-sm text-gray-500">{ticket.description.substring(0, 50)}...</div>
+                    <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
+                      <div className="text-sm font-medium text-gray-900 break-words">{ticket.title}</div>
+                      <div className="text-sm text-gray-500 break-words line-clamp-2">{ticket.description.substring(0, 50)}...</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap align-top">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(ticket.status)}`}>
-                        {ticket.status}
+                        {formatTicketStatusLabel(ticket.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap align-top">
                       <span className="text-sm font-medium text-indigo-600">
                         {ticket.anydeskNumber || 'N/A'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className={`font-medium ${ticket.slaStatus === 'OVERDUE' ? 'text-red-600' : 'text-gray-900'}`}>
-                        {ticket.slaStatus}
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500 align-top">
+                      <div className="text-sm font-medium text-gray-900">
+                        {ticket.createdBy?.name || 'N/A'}
                       </div>
-                      {ticket.slaDeadline && (
-                        <div className="text-xs text-gray-500">
-                          {format(new Date(ticket.slaDeadline), 'MMM dd, yyyy HH:mm')}
-                        </div>
+                      {ticket.createdBy?.email && (
+                        <div className="text-xs text-gray-500">{ticket.createdBy.email}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {ticket.assignedTo?.name || (ticket.specialization?.name ? `Team: ${ticket.specialization.name}` : 'Unassigned')}
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500 align-top">
+                      {ticket.assignedTo?.name ||
+                        (ticket.specialization?.name
+                          ? `${t('dashboard.teamPrefix')}: ${ticket.specialization.name}`
+                          : t('dashboard.unassigned'))}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm align-top">
                       <button
                         onClick={() => router.push(`/tickets/${ticket.id}`)}
                         className="text-indigo-600 hover:text-indigo-800 font-medium"
                       >
-                        View
+                        {t('tickets.view')}
                       </button>
                     </td>
                   </tr>
@@ -127,7 +171,7 @@ export default function Tickets() {
               </tbody>
             </table>
             {tickets.length === 0 && (
-              <div className="text-center py-12 text-gray-500">No tickets found</div>
+              <div className="text-center py-12 text-gray-500">{t('tickets.none')}</div>
             )}
           </div>
         </div>

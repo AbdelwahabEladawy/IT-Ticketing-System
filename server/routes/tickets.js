@@ -6,10 +6,20 @@ import { createAuditLog } from '../utils/auditLog.js';
 import { assignTicketRoundRobin } from '../utils/roundRobin.js';
 import { routeByIssueType } from '../utils/issueRouting.js';
 import { calculateSLADeadline, getSLAHours, getSLAStatus } from '../utils/sla.js';
-import { notifyTicketStatusChange, createNotification } from '../utils/notifications.js';
+import { notifyTicketStatusChange, notifyFromTemplate } from '../utils/notifications.js';
+import { broadcastToUser } from '../services/wsTicketMessages.js';
+import { broadcastTicketListUpdated } from '../services/wsTicketEvents.js';
+import { createResolvedTicketComment } from '../services/ticketResolvedCommentService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const SELF_ASSIGN_SPECIALIZATIONS = new Set([
+  'Help Desk',
+  'IT Admin',
+  'Network',
+  'Server/Admin',
+  'Software Engineering'
+]);
 
 // Create ticket
 router.post('/', authenticate, checkPermission('create_ticket'), [
@@ -26,7 +36,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { title, description, anydeskNumber, problemType, issueType, specializationId } = req.body;
+    const { title, description, anydeskNumber, problemType, issueType, specializationId, assignedToId: requestedAssignedToId } = req.body;
 
     console.log('Creating ticket with:', { title, issueType, problemType, specializationId });
 
@@ -42,17 +52,31 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
     // 1. If issueType is "CUSTOM" → Route to IT Admin team
     // 2. If issueType is provided (not CUSTOM) → Route directly to mapped specialization
     // 3. Otherwise → Use existing routing logic (backward compatibility)
-    
-    if (issueType === 'CUSTOM') {
-      // CUSTOM PROBLEM: Assign to IT Admin team (specialization) without individual assignment
+
+    const userSpecializationName = req.user.specialization?.name;
+    const canCreateSelfAssignedTicket =
+      (req.user.role === 'TECHNICIAN' || req.user.role === 'IT_ADMIN') &&
+      SELF_ASSIGN_SPECIALIZATIONS.has(userSpecializationName || '');
+
+    if (canCreateSelfAssignedTicket) {
+      assignedToId = req.user.id;
+      finalSpecializationId = req.user.specializationId || finalSpecializationId;
+      status = 'ASSIGNED';
+      assignedAt = new Date();
+    } else if (issueType === 'CUSTOM') {
+      // CUSTOM PROBLEM: Route to IT Admin team and assign to an online engineer (round-robin)
       const itAdminSpec = await prisma.specialization.findUnique({
         where: { name: 'IT Admin' }
       });
       if (itAdminSpec) {
         finalSpecializationId = itAdminSpec.id;
-        // Don't assign to individual technician - assign to team only
-        // Status remains OPEN so IT Admin can review and assign to specific team
-        console.log(`Custom ticket assigned to IT Admin team (specialization: ${itAdminSpec.name})`);
+        const technician = await assignTicketRoundRobin(itAdminSpec.id);
+        if (technician) {
+          assignedToId = technician.id;
+          assignedAt = new Date();
+          status = 'ASSIGNED';
+        }
+        console.log(`Custom ticket routed to IT Admin team (specialization: ${itAdminSpec.name})`);
       }
     } else if (issueType) {
       // Issue type selected (not CUSTOM) - route directly to mapped specialization
@@ -85,23 +109,37 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
           status = 'ASSIGNED';
         }
       } else if (problemType === 'CUSTOM') {
-        // CUSTOM PROBLEM: Assign to IT Admin team
+        // CUSTOM PROBLEM: Assign to IT Admin team and assign to an online engineer (round-robin)
         const itAdminSpec = await prisma.specialization.findUnique({
           where: { name: 'IT Admin' }
         });
         if (itAdminSpec) {
           finalSpecializationId = itAdminSpec.id;
-          console.log(`Custom ticket assigned to IT Admin team (specialization: ${itAdminSpec.name})`);
+          const technician = await assignTicketRoundRobin(itAdminSpec.id);
+          if (technician) {
+            assignedToId = technician.id;
+            assignedAt = new Date();
+            status = 'ASSIGNED';
+          }
+          console.log(`Custom ticket routed to IT Admin team (specialization: ${itAdminSpec.name})`);
         }
       }
     }
 
-    console.log('Final ticket data:', { 
-      finalSpecializationId, 
-      assignedToId, 
-      status, 
-      issueType 
+    console.log('Final ticket data:', {
+      finalSpecializationId,
+      assignedToId,
+      status,
+      issueType
     });
+
+    if (requestedAssignedToId && req.user.role !== 'SUPER_ADMIN') {
+      if (!canCreateSelfAssignedTicket || requestedAssignedToId !== req.user.id) {
+        return res.status(403).json({
+          error: 'Manual assignee is not allowed. Ticket will be auto-routed by issue type.'
+        });
+      }
+    }
 
     const ticket = await prisma.ticket.create({
       data: {
@@ -139,14 +177,23 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
 
     // Notify if assigned
     if (assignedToId) {
-      await createNotification(
-        assignedToId,
-        'مهمة جديدة',
-        `تم تعيين تذكرة جديدة: ${title}`,
-        'info',
-        ticket.id
-      );
+      await notifyFromTemplate(assignedToId, 'NEW_ASSIGNED_TICKET', { title }, 'info', ticket.id);
     }
+
+    // Ticket assignment is handled at creation time using round-robin.
+    // Do NOT run a full redistribution here; partial balancing happens only
+    // when engineers come online.
+
+    // Re-fetch fresh assignee/specialization data after any internal auto-routing/rebalance.
+    const freshTicket = await prisma.ticket.findUnique({
+      where: { id: ticket.id },
+      select: { id: true, createdById: true, assignedToId: true, specializationId: true }
+    });
+    await broadcastTicketListUpdated({
+      ticketId: ticket.id,
+      event: 'TICKET_CREATED',
+      ticket: freshTicket
+    });
 
     res.status(201).json({ ticket });
   } catch (error) {
@@ -156,7 +203,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       code: error.code,
       meta: error.meta
     });
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Server error',
       details: error.message,
       code: error.code
@@ -174,7 +221,7 @@ router.get('/', authenticate, async (req, res) => {
       tickets = await prisma.ticket.findMany({
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
-          assignedTo: { 
+          assignedTo: {
             include: { specialization: true }
           },
           specialization: true
@@ -193,7 +240,7 @@ router.get('/', authenticate, async (req, res) => {
         },
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
-          assignedTo: { 
+          assignedTo: {
             include: { specialization: true }
           },
           specialization: true
@@ -206,7 +253,7 @@ router.get('/', authenticate, async (req, res) => {
         where: { assignedToId: req.user.id },
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
-          assignedTo: { 
+          assignedTo: {
             include: { specialization: true }
           },
           specialization: true
@@ -214,12 +261,12 @@ router.get('/', authenticate, async (req, res) => {
         orderBy: { createdAt: 'desc' }
       });
     } else {
-      // User sees only their tickets
+      // User sees all tickets they created
       tickets = await prisma.ticket.findMany({
         where: { createdById: req.user.id },
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
-          assignedTo: { 
+          assignedTo: {
             include: { specialization: true }
           },
           specialization: true
@@ -248,7 +295,7 @@ router.get('/:id', authenticate, async (req, res) => {
       where: { id: req.params.id },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
-        assignedTo: { 
+        assignedTo: {
           include: { specialization: true }
         },
         specialization: true
@@ -273,13 +320,13 @@ router.get('/:id', authenticate, async (req, res) => {
       const itAdminSpec = await prisma.specialization.findUnique({
         where: { name: 'IT Admin' }
       });
-      
+
       if (!itAdminSpec || ticket.specializationId !== itAdminSpec.id) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     }
 
-    res.json({ 
+    res.json({
       ticket: {
         ...ticket,
         slaStatus: getSLAStatus(ticket.slaDeadline)
@@ -324,7 +371,7 @@ router.patch('/:id/status', authenticate, [
       const itAdminSpec = await prisma.specialization.findUnique({
         where: { name: 'IT Admin' }
       });
-      
+
       if (!itAdminSpec || ticket.specializationId !== itAdminSpec.id) {
         return res.status(403).json({ error: 'Forbidden' });
       }
@@ -334,11 +381,11 @@ router.patch('/:id/status', authenticate, [
     const { status } = req.body;
 
     const updateData = { status };
-    
+
     if (status === 'RESOLVED' && !ticket.resolvedAt) {
       updateData.resolvedAt = new Date();
     }
-    
+
     if (status === 'CLOSED' && !ticket.closedAt) {
       updateData.closedAt = new Date();
     }
@@ -348,7 +395,7 @@ router.patch('/:id/status', authenticate, [
       data: updateData,
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
-        assignedTo: { 
+        assignedTo: {
           include: { specialization: true }
         },
         specialization: true
@@ -365,7 +412,13 @@ router.patch('/:id/status', authenticate, [
 
     await notifyTicketStatusChange(updatedTicket, oldStatus, status);
 
-    res.json({ 
+    await broadcastTicketListUpdated({
+      ticketId: updatedTicket.id,
+      event: 'TICKET_STATUS_CHANGED',
+      ticket: updatedTicket
+    });
+
+    res.json({
       ticket: {
         ...updatedTicket,
         slaStatus: getSLAStatus(updatedTicket.slaDeadline)
@@ -377,9 +430,286 @@ router.patch('/:id/status', authenticate, [
   }
 });
 
+// Create an "action request" message and set ticket status to USER_ACTION_NEEDED
+router.post('/:id/action-needed', authenticate, [
+  body('comment').trim().notEmpty().withMessage('Comment is required when requesting user action')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    // Permission: only technicians (assigned) and IT Admin (IT Admin team tickets)
+    // Engineers are also allowed to perform this action; SUPER_ADMIN is allowed for all.
+    if (req.user.role === 'USER') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (req.user.role === 'IT_ADMIN') {
+      const itAdminSpec = await prisma.specialization.findUnique({
+        where: { name: 'IT Admin' }
+      });
+
+      if (!itAdminSpec || ticket.specializationId !== itAdminSpec.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    const { comment } = req.body;
+    const trimmedComment = comment.trim();
+
+    const ticketCreatorId = ticket.createdById;
+
+    const [updatedTicket, actionMessage] = await prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { id: req.params.id },
+        data: { status: 'USER_ACTION_NEEDED' },
+      });
+
+      const msg = await tx.ticketMessage.create({
+        data: {
+          ticketId: req.params.id,
+          authorId: req.user.id,
+          toUserId: ticketCreatorId,
+          parentId: null,
+          type: 'ACTION_REQUEST',
+          body: trimmedComment
+        },
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+          toUser: { select: { id: true, name: true, email: true } }
+        }
+      });
+
+      return [updated, msg];
+    });
+
+    await createAuditLog(
+      'TICKET_USER_ACTION_NEEDED',
+      `Engineer requested user action for ticket "${ticket.title}"`,
+      req.user.id,
+      ticket.id,
+      { comment: trimmedComment }
+    );
+
+    await notifyFromTemplate(
+      ticketCreatorId,
+      'ACTION_REQUIRED',
+      { title: ticket.title },
+      'info',
+      ticket.id
+    );
+
+    broadcastToUser(ticketCreatorId, {
+      type: 'ticket_message_created',
+      ticketId: ticket.id,
+      message: actionMessage
+    });
+
+    await broadcastTicketListUpdated({
+      ticketId: updatedTicket.id,
+      event: 'TICKET_STATUS_CHANGED',
+      ticket: updatedTicket,
+      oldTicket: ticket
+    });
+
+    res.json({
+      ticket: updatedTicket,
+      message: actionMessage
+    });
+  } catch (error) {
+    console.error('Action-needed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a user reply to a specific action request message
+router.post('/:id/replies', authenticate, [
+  body('requestMessageId').isString().withMessage('requestMessageId is required'),
+  body('reply').trim().notEmpty().withMessage('Reply is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const { requestMessageId, reply } = req.body;
+    const trimmedReply = reply.trim();
+
+    const requestMessage = await prisma.ticketMessage.findUnique({
+      where: { id: requestMessageId }
+    });
+
+    if (!requestMessage || requestMessage.ticketId !== req.params.id) {
+      return res.status(404).json({ error: 'Action request not found' });
+    }
+
+    if (requestMessage.type !== 'ACTION_REQUEST') {
+      return res.status(400).json({ error: 'Invalid request message type' });
+    }
+
+    // Only the recipient of the request can reply (the ticket creator)
+    if (requestMessage.toUserId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const [replyMessage] = await prisma.$transaction(async (tx) => {
+      const msg = await tx.ticketMessage.create({
+        data: {
+          ticketId: req.params.id,
+          authorId: req.user.id,
+          toUserId: requestMessage.authorId,
+          parentId: requestMessage.id,
+          type: 'USER_REPLY',
+          body: trimmedReply
+        },
+        include: {
+          author: { select: { id: true, name: true, email: true } },
+          toUser: { select: { id: true, name: true, email: true } },
+          parent: { select: { id: true, type: true } }
+        }
+      });
+      return [msg];
+    });
+
+    await createAuditLog(
+      'TICKET_USER_REPLIED',
+      `User replied to action request for ticket "${ticket.title}"`,
+      req.user.id,
+      ticket.id,
+      { reply: trimmedReply, requestMessageId: requestMessage.id }
+    );
+
+    await notifyFromTemplate(
+      requestMessage.authorId,
+      'USER_CONFIRMED',
+      { title: ticket.title },
+      'info',
+      ticket.id
+    );
+
+    broadcastToUser(requestMessage.authorId, {
+      type: 'ticket_message_created',
+      ticketId: ticket.id,
+      message: replyMessage
+    });
+
+    res.json({ message: replyMessage });
+  } catch (error) {
+    console.error('Reply error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get messages (requests + replies) for a ticket, filtered by access
+router.get('/:id/messages', authenticate, async (req, res) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    // Same access control as ticket detail:
+    if (req.user.role === 'USER' && ticket.createdById !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (req.user.role === 'IT_ADMIN') {
+      const itAdminSpec = await prisma.specialization.findUnique({
+        where: { name: 'IT Admin' }
+      });
+
+      if (!itAdminSpec || ticket.specializationId !== itAdminSpec.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    const fullThreadRoles = ['SUPER_ADMIN', 'IT_MANAGER', 'IT_ADMIN', 'USER'];
+    const messageWhere = fullThreadRoles.includes(req.user.role)
+      ? { ticketId: req.params.id }
+      : {
+          ticketId: req.params.id,
+          OR: [{ authorId: req.user.id }, { toUserId: req.user.id }]
+        };
+
+    const messages = await prisma.ticketMessage.findMany({
+      where: messageWhere,
+      orderBy: { createdAt: 'asc' },
+      include: {
+        author: { select: { id: true, name: true, email: true } },
+        toUser: { select: { id: true, name: true, email: true } }
+      }
+    });
+
+    res.json({ messages });
+  } catch (error) {
+    console.error('Ticket messages error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// USER follow-up comment on a RESOLVED ticket (stored as TicketMessage RESOLVED_COMMENT; WS to assignee)
+router.post(
+  '/:id/resolved-comments',
+  authenticate,
+  [body('body').trim().notEmpty().withMessage('Comment is required')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      if (req.user.role !== 'USER') {
+        return res.status(403).json({ error: 'Only users can add follow-up comments on resolved tickets' });
+      }
+      const message = await createResolvedTicketComment({
+        ticketId: req.params.id,
+        userId: req.user.id,
+        body: req.body.body
+      });
+      res.status(201).json({ message });
+    } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('Resolved comment error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
 // Assign custom ticket to team (IT Admin only)
 // For CUSTOM tickets only: Assigns to specialization (team) not individual technician
-router.post('/:id/assign', authenticate, checkPermission('assign_custom_ticket'), [
+router.post('/:id/assign', authenticate, authorize('SUPER_ADMIN'), [
   body('specializationId').isString().withMessage('Specialization ID is required')
 ], async (req, res) => {
   try {
@@ -425,7 +755,7 @@ router.post('/:id/assign', authenticate, checkPermission('assign_custom_ticket')
       },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
-        assignedTo: { 
+        assignedTo: {
           include: { specialization: true }
         },
         specialization: true
@@ -442,10 +772,10 @@ router.post('/:id/assign', authenticate, checkPermission('assign_custom_ticket')
 
     // Notify technician if assigned, otherwise notify all IT_ADMIN in the team
     if (technician) {
-      await createNotification(
+      await notifyFromTemplate(
         technician.id,
-        'New Ticket',
-        `New ticket assigned: ${ticket.title}`,
+        'NEW_TICKET',
+        { title: ticket.title },
         'info',
         ticket.id
       );
@@ -458,17 +788,24 @@ router.post('/:id/assign', authenticate, checkPermission('assign_custom_ticket')
         }
       });
       for (const member of teamMembers) {
-        await createNotification(
+        await notifyFromTemplate(
           member.id,
-          'New Ticket',
-          `New ticket assigned to ${specialization.name} team: ${ticket.title}`,
+          'NEW_TICKET_TEAM',
+          { teamName: specialization.name, title: ticket.title },
           'info',
           ticket.id
         );
       }
     }
 
-    res.json({ 
+    await broadcastTicketListUpdated({
+      ticketId: updatedTicket.id,
+      event: 'TICKET_ASSIGNED',
+      ticket: updatedTicket,
+      oldTicket: ticket
+    });
+
+    res.json({
       ticket: {
         ...updatedTicket,
         slaStatus: getSLAStatus(updatedTicket.slaDeadline)
@@ -483,7 +820,7 @@ router.post('/:id/assign', authenticate, checkPermission('assign_custom_ticket')
 // Reassign ticket (IT Manager and IT Admin only)
 // For CUSTOM tickets: Reassigns to specialization (team)
 // For other tickets: Reassigns to individual technician (existing behavior)
-router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN'), [
+router.post('/:id/reassign', authenticate, authorize('SUPER_ADMIN'), [
   body('specializationId').optional().isString(),
   body('technicianId').optional().isString()
 ], async (req, res) => {
@@ -518,7 +855,7 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
       }
 
       const oldSpecializationId = ticket.specializationId;
-      
+
       // Assign to team using round-robin
       const technician = await assignTicketRoundRobin(specializationId);
 
@@ -532,7 +869,7 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
         },
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
-          assignedTo: { 
+          assignedTo: {
             include: { specialization: true }
           },
           specialization: true
@@ -549,16 +886,23 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
 
       // Notify team members
       if (technician) {
-        await createNotification(
+        await notifyFromTemplate(
           technician.id,
-          'Ticket Reassigned',
-          `Ticket reassigned to ${specialization.name} team: ${ticket.title}`,
+          'TICKET_REASSIGNED_TEAM',
+          { teamName: specialization.name, title: ticket.title },
           'info',
           ticket.id
         );
       }
 
-      res.json({ 
+      await broadcastTicketListUpdated({
+        ticketId: updatedTicket.id,
+        event: 'TICKET_REASSIGNED',
+        ticket: updatedTicket,
+        oldTicket: ticket
+      });
+
+      res.json({
         ticket: {
           ...updatedTicket,
           slaStatus: getSLAStatus(updatedTicket.slaDeadline)
@@ -582,6 +926,7 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
 
     const oldTechnicianId = ticket.assignedToId;
 
+    const oldSpecializationId = ticket.specializationId;
     const updatedTicket = await prisma.ticket.update({
       where: { id: req.params.id },
       data: {
@@ -591,7 +936,7 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
       },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
-        assignedTo: { 
+        assignedTo: {
           include: { specialization: true }
         },
         specialization: true
@@ -606,15 +951,22 @@ router.post('/:id/reassign', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', '
       { oldTechnicianId, newTechnicianId: technicianId }
     );
 
-    await createNotification(
+    await notifyFromTemplate(
       technicianId,
-      'إعادة تعيين مهمة',
-      `تم إعادة تعيين التذكرة: ${ticket.title}`,
+      'TICKET_REASSIGNED_TECH',
+      { title: ticket.title },
       'info',
       ticket.id
     );
 
-    res.json({ 
+    await broadcastTicketListUpdated({
+      ticketId: updatedTicket.id,
+      event: 'TICKET_REASSIGNED',
+      ticket: updatedTicket,
+      oldTicket: ticket
+    });
+
+    res.json({
       ticket: {
         ...updatedTicket,
         slaStatus: getSLAStatus(updatedTicket.slaDeadline)
