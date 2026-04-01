@@ -51,6 +51,16 @@ enum ProblemType {
     CUSTOM
 }
 
+enum ScheduledTaskType {
+    ONE_TIME
+    YEARLY
+}
+
+enum ScheduledTaskRunStatus {
+    SUCCESS
+    FAILED
+}
+
 model User {
     id        String   @id @default(cuid())
     email     String   @unique
@@ -83,6 +93,8 @@ model User {
     auditLogs       AuditLog[]
     suggestions     Suggestion[]
     notifications   Notification[]
+    scheduledTasksCreated ScheduledTicketTask[] @relation("ScheduledTaskCreator")
+    scheduledTasksAssigned ScheduledTicketTask[] @relation("ScheduledTaskTarget")
 
     @@index([email])
     @@index([role])
@@ -134,6 +146,7 @@ model Ticket {
 
     auditLogs AuditLog[]
     messages  TicketMessage[]
+    scheduledTaskRuns ScheduledTaskRun[]
 
     @@index([createdById])
     @@index([assignedToId])
@@ -226,6 +239,52 @@ model TicketMessage {
     @@index([authorId])
     @@index([parentId])
     @@index([type])
+}
+
+model ScheduledTicketTask {
+    id          String            @id @default(cuid())
+    title       String
+    description String?
+    scheduleType ScheduledTaskType
+    runDate     String? // YYYY-MM-DD for ONE_TIME
+    month       Int?
+    day         Int?
+    timeOfDay   String            @default("09:00") // HH:mm
+    timezone    String            @default("Africa/Cairo")
+    nextRunAt   DateTime
+    isActive    Boolean           @default(true)
+
+    targetUserId String
+    targetUser   User             @relation("ScheduledTaskTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+    createdById String
+    createdBy   User              @relation("ScheduledTaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime          @default(now())
+    updatedAt   DateTime          @updatedAt
+
+    runs ScheduledTaskRun[]
+
+    @@index([isActive, nextRunAt])
+    @@index([targetUserId, isActive])
+    @@index([createdById])
+}
+
+model ScheduledTaskRun {
+    id        String                 @id @default(cuid())
+    scheduledTaskId String
+    scheduledTask   ScheduledTicketTask @relation(fields: [scheduledTaskId], references: [id], onDelete: Cascade)
+    scheduledFor DateTime
+    status    ScheduledTaskRunStatus
+    trigger   String                 @default("AUTO") // AUTO | MANUAL
+    ticketId  String?
+    ticket    Ticket?                @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+    errorMessage String?
+    executedAt DateTime              @default(now())
+
+    @@unique([scheduledTaskId, scheduledFor])
+    @@index([scheduledTaskId, executedAt])
+    @@index([status])
 }
 
 model RebalanceJob {

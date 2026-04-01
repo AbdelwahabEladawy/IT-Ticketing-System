@@ -166,10 +166,11 @@ export default function Layout({ children }: LayoutProps) {
   const getNavLinks = () => {
     if (!user) return [];
 
-    const links: { href: string; labelKey: string; roles: string[] }[] = [
+    const links: { href: string; labelKey: string; defaultLabel?: string; roles: string[] }[] = [
       {
         href: "/dashboard",
         labelKey: "layout.dashboard",
+        defaultLabel: "Dashboard",
         roles: [
           "USER",
           "TECHNICIAN",
@@ -182,6 +183,7 @@ export default function Layout({ children }: LayoutProps) {
       {
         href: "/tickets",
         labelKey: "layout.tickets",
+        defaultLabel: "Tickets",
         roles: [
           "USER",
           "TECHNICIAN",
@@ -194,11 +196,19 @@ export default function Layout({ children }: LayoutProps) {
       {
         href: "/tickets/create",
         labelKey: "layout.createTicket",
+        defaultLabel: "Create Ticket",
         roles: ["USER", "IT_MANAGER", "SUPER_ADMIN"],
+      },
+      {
+        href: "/scheduling-tickets",
+        labelKey: "layout.schedulingTickets",
+        defaultLabel: "Scheduling Tickets",
+        roles: ["TECHNICIAN", "IT_ADMIN"],
       },
       {
         href: "/suggestions",
         labelKey: "layout.suggestionsInbox",
+        defaultLabel: "Suggestions Inbox",
         roles: ["SUPER_ADMIN", "SOFTWARE_ENGINEER"],
       },
     ];
@@ -210,11 +220,13 @@ export default function Layout({ children }: LayoutProps) {
       links.push({
         href: "/users",
         labelKey: "layout.users",
+        defaultLabel: "Engineers",
         roles: ["IT_MANAGER", "SUPER_ADMIN"],
       });
       links.push({
         href: "/specializations",
         labelKey: "layout.specializations",
+        defaultLabel: "Specializations",
         roles: ["IT_MANAGER", "SUPER_ADMIN"],
       });
     }
@@ -226,7 +238,8 @@ export default function Layout({ children }: LayoutProps) {
     router.pathname === "/dashboard" ||
     router.pathname === "/tickets/create" ||
     router.pathname === "/tickets" ||
-    router.pathname.startsWith("/tickets/");
+    router.pathname.startsWith("/tickets/") ||
+    router.pathname === "/scheduling-tickets";
 
   const superAdminManagementGroupActive =
     router.pathname === "/users" ||
@@ -350,6 +363,19 @@ export default function Layout({ children }: LayoutProps) {
                         >
                           {t("layout.tickets")}
                         </Link>
+                        <Link
+                          href="/scheduling-tickets"
+                          className={`block px-4 py-2 text-sm ${
+                            router.pathname === "/scheduling-tickets"
+                              ? "bg-indigo-50 font-medium text-indigo-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                          onClick={() => setOpenSuperAdminMenu(null)}
+                        >
+                          {t("layout.schedulingTickets", {
+                            defaultValue: "Scheduling Tickets",
+                          })}
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -433,6 +459,7 @@ export default function Layout({ children }: LayoutProps) {
                         "/dashboard",
                         "/tickets",
                         "/tickets/create",
+                        "/scheduling-tickets",
                         "/suggestions",
                         "/users",
                         "/specializations",
@@ -451,7 +478,9 @@ export default function Layout({ children }: LayoutProps) {
                             : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900"
                         }`}
                       >
-                        {t(link.labelKey)}
+                        {t(link.labelKey, {
+                          defaultValue: link.defaultLabel || link.href,
+                        })}
                         {link.href === "/suggestions" &&
                           unseenSuggestions > 0 && (
                             <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">

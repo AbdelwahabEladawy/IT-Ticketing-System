@@ -15,6 +15,8 @@ import suggestionRoutes from './routes/suggestions.js';
 import presenceRoutes from './routes/presence.js';
 import { setupPresenceWebSocket } from './services/wsPresence.js';
 import { runPresenceSweeper } from './services/presenceService.js';
+import schedulingRoutes from './features/scheduling/scheduling.routes.js';
+import { startSchedulingWorker } from './features/scheduling/scheduling.worker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +40,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/scheduling-tickets', schedulingRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'IT Ticketing System API' });
@@ -51,6 +54,7 @@ setInterval(async () => {
     console.error('Presence sweeper error:', error.message);
   }
 }, Number(process.env.PRESENCE_SWEEPER_MS || 15000));
+startSchedulingWorker();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
