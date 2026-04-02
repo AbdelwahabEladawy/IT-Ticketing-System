@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useTranslation } from 'react-i18next';
 import Layout from '../../components/Layout';
 import api from '../../utils/api';
+import { getCurrentUser } from '../../utils/auth';
 import { connectTicketMessages, disconnectTicketMessages } from '../../utils/ticketMessages';
 import { formatTicketStatusLabel as formatStatus } from '../../utils/ticketStatusLabel';
 
@@ -25,10 +26,22 @@ export default function Tickets() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadTickets();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = await getCurrentUser();
+      if (!cancelled) setSessionUserId(u?.id ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadTickets = async (opts?: { silent?: boolean }) => {
@@ -59,14 +72,40 @@ export default function Tickets() {
     }, 300);
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onFocus = () => {
+      void loadTicketsRef.current({ silent: true });
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadTicketsRef.current({ silent: true });
+      }
+    }, 8000);
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
+
   const shouldReloadTicketsFromWs = (payload: any) => {
     if (!payload) return false;
     if (payload.type === 'ticket_list_updated') return true;
-    if (payload.type === 'notification_created' && payload.notification?.ticketId) return true;
+    if (payload.ticketId) return true;
+    if (payload.type === 'notification_created') return true;
     return false;
   };
 
   useEffect(() => {
+    if (!sessionUserId) return;
+
     const onPayload = (payload: any) => {
       if (!shouldReloadTicketsFromWs(payload)) return;
       scheduleTicketsReload();
@@ -81,8 +120,7 @@ export default function Tickets() {
       }
       disconnectTicketMessages(onPayload);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionUserId]);
 
   const formatTicketStatusLabel = (status: string) => formatStatus(status, t);
 

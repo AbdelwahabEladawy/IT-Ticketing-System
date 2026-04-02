@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<
     "ALL" | "OPEN" | "RESOLVED" | "CLOSED" | "PENDING"
   >("ALL");
@@ -41,6 +42,7 @@ export default function Dashboard() {
     const loadRole = async () => {
       const currentUser = await getCurrentUser();
       const role = currentUser?.role ?? null;
+      setSessionUserId(currentUser?.id ?? null);
       setUserRole(role);
       if (role === "USER") {
         setActiveFilter("OPEN");
@@ -75,19 +77,45 @@ export default function Dashboard() {
     }, 300);
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onFocus = () => {
+      void loadDashboardRef.current({ silent: true });
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadDashboardRef.current({ silent: true });
+      }
+    }, 8000);
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, []);
+
   const shouldReloadDashboardFromWs = (payload: any) => {
     if (!payload) return false;
     if (payload.type === "ticket_list_updated") return true;
+    if (payload.ticketId) return true;
     // Same channel as notifications: if the user sees a ticket notification in realtime,
     // refresh lists so status/filters match without a full page reload.
-    if (payload.type === "notification_created" && payload.notification?.ticketId) {
+    if (payload.type === "notification_created") {
       return true;
     }
     return false;
   };
 
-  // Realtime updates: refresh dashboard when ticket assignment/status changes
+  // Realtime updates: subscribe only after session is known (same timing as Layout WS).
   useEffect(() => {
+    if (!sessionUserId) return;
+
     const onPayload = (payload: any) => {
       if (!shouldReloadDashboardFromWs(payload)) return;
       scheduleDashboardReload();
@@ -102,8 +130,7 @@ export default function Dashboard() {
       }
       disconnectTicketMessages(onPayload);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionUserId]);
 
   const formatTicketStatusLabel = (status: string) => formatStatus(status, t);
 
@@ -233,7 +260,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="bg-white  rounded-xl shadow-lg border border-gray-200">
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50">
             <h2 className="text-xl font-semibold text-gray-900">
               {t("dashboard.ticketsSection")}
@@ -269,7 +296,7 @@ export default function Dashboard() {
                     key={ticket.id}
                     className="hover:bg-gray-50 transition-colors"
                   >
-                    <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top ">
+                    <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
                       <div className="text-sm font-medium text-gray-900 break-words">
                         {ticket.title}
                       </div>
