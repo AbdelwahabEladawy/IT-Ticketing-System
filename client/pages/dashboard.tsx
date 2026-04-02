@@ -233,7 +233,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200">
+        <div className="bg-white  rounded-xl shadow-lg border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50">
             <h2 className="text-xl font-semibold text-gray-900">
               {t("dashboard.ticketsSection")}
@@ -269,7 +269,7 @@ export default function Dashboard() {
                     key={ticket.id}
                     className="hover:bg-gray-50 transition-colors"
                   >
-                    <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
+                    <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top ">
                       <div className="text-sm font-medium text-gray-900 break-words">
                         {ticket.title}
                       </div>
