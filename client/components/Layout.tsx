@@ -216,13 +216,16 @@ export default function Layout({ children }: LayoutProps) {
 
     if (
       user.role === "IT_MANAGER" ||
+      user.role === "HELP_DESK" ||
+      user.role === "TECHNICIAN" ||
+      user.role === "SOFTWARE_ENGINEER" ||
       user.role === "SUPER_ADMIN"
     ) {
       links.push({
         href: "/users",
         labelKey: "layout.users",
         defaultLabel: "Engineers",
-        roles: ["IT_MANAGER", "SUPER_ADMIN"],
+        roles: ["IT_MANAGER", "HELP_DESK", "TECHNICIAN", "SOFTWARE_ENGINEER", "SUPER_ADMIN"],
       });
       links.push({
         href: "/specializations",

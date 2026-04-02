@@ -5,7 +5,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'USER' | 'TECHNICIAN' | 'IT_ADMIN' | 'IT_MANAGER' | 'SUPER_ADMIN' | 'SOFTWARE_ENGINEER';
+  role: 'USER' | 'BASIC_USER' | 'HELP_DESK' | 'TECHNICIAN' | 'IT_ADMIN' | 'IT_MANAGER' | 'SUPER_ADMIN' | 'SOFTWARE_ENGINEER';
   preferredLocale?: 'en' | 'ar';
   specialization?: {
     id: string;

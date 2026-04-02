@@ -29,14 +29,3 @@ export const broadcastToUser = (toUserId, payload) => {
   }
 };
 
-export const broadcastToAll = (payload) => {
-  const message = JSON.stringify(payload);
-  for (const set of socketsByUserId.values()) {
-    for (const socket of set) {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(message);
-      }
-    }
-  }
-};
-

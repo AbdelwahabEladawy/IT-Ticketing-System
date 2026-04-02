@@ -27,6 +27,18 @@ export default function Users() {
     created: number;
     skipped: number;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState("USER");
+  const [editSpecializationId, setEditSpecializationId] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState("");
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     loadUser();
@@ -52,8 +64,8 @@ export default function Users() {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/users/technicians");
-      setUsers(res.data.technicians || []);
+      const res = await api.get("/users");
+      setUsers(res.data.users || []);
     } catch (err) {
       console.error(err);
       setUsers([]);
@@ -62,10 +74,116 @@ export default function Users() {
     }
   };
 
+  const openEditModal = (user: any) => {
+    setEditUser(user);
+    setEditName(user.name || "");
+    setEditEmail(user.email || "");
+    setEditRole(user.role || "USER");
+    setEditSpecializationId(user.specialization?.id || "");
+    setEditOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditOpen(false);
+    setEditUser(null);
+    setEditName("");
+    setEditEmail("");
+    setEditRole("USER");
+    setEditSpecializationId("");
+  };
+
+  const handleEditSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!editUser) return;
+    if (editName.trim().length === 0) {
+      return;
+    }
+
+    try {
+      const payload: any = {
+        name: editName.trim(),
+        email: editEmail.trim(),
+      };
+      if (editRole) {
+        payload.role = editRole;
+      }
+      if (editSpecializationId) {
+        payload.specializationId = editSpecializationId;
+      }
+
+      await api.patch(`/users/${editUser.id}`, payload);
+      await loadUsers();
+      closeEditModal();
+    } catch (err: any) {
+      console.error('Failed to update user', err);
+    }
+  };
+
+  const handleDeleteUser = async (user: any) => {
+    if (!confirm(`Delete user ${user.email}?`)) return;
+    try {
+      await api.delete(`/users/${user.id}`);
+      await loadUsers();
+    } catch (err: any) {
+      console.error('Failed to delete user', err);
+    }
+  };
+
+  const openResetModal = (user: any) => {
+    setSelectedUser(user);
+    setResetPassword("");
+    setResetError(null);
+    setResetOpen(true);
+  };
+
+  const closeResetModal = () => {
+    setResetOpen(false);
+    setSelectedUser(null);
+    setResetPassword("");
+    setResetError(null);
+  };
+
+  const handleResetSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    if (resetPassword.trim().length < 6) {
+      setResetError(t("users.passwordLengthError", { defaultValue: "Password must be at least 6 characters" }));
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      await api.patch(`/users/${selectedUser.id}/password`, {
+        newPassword: resetPassword,
+      });
+      closeResetModal();
+    } catch (err: any) {
+      setResetError(err?.response?.data?.error || t("users.resetPasswordFailed", { defaultValue: "Failed to reset password" }));
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const loadSpecializations = async () => {
     const res = await api.get("/specializations");
     setBulkSpecializations(res.data.specializations || []);
   };
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (currentUser.role === "IT_MANAGER" || currentUser.role === "IT_ADMIN" || currentUser.role === "SUPER_ADMIN") {
+      loadSpecializations().catch(() => {});
+    }
+  }, [currentUser]);
+
+  const filteredUsers = users.filter((user) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      user.email?.toLowerCase().includes(query) ||
+      user.name?.toLowerCase().includes(query)
+    );
+  });
 
   const openBulkModal = async () => {
     setBulkError(null);
@@ -133,29 +251,47 @@ export default function Users() {
   return (
     <Layout>
       <div className="px-4 py-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">
-            {t("layout.users")}
-          </h1>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              {t("layout.users")}
+            </h1>
+            <p className="mt-2 text-sm text-gray-500">
+              {t("users.manageHelpDesk", {
+                defaultValue: "Search users by email, update details, reset passwords, or delete accounts.",
+              })}
+            </p>
+          </div>
 
-          {(currentUser?.role === "IT_MANAGER" ||
-            currentUser?.role === "SUPER_ADMIN") && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => router.push("/users/create")}
-                className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
-              >
-                {t("users.addEngineer")}
-              </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("users.searchPlaceholder", {
+                defaultValue: "Search by name or email...",
+              })}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:w-80"
+            />
 
-              <button
-                onClick={openBulkModal}
-                className="px-6 py-2 border rounded-lg text-indigo-700 hover:bg-indigo-50"
-              >
-                {t("users.bulkCreateUser")}
-              </button>
-            </div>
-          )}
+            {currentUser?.role !== "IT_ADMIN" && (
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  onClick={() => router.push("/users/create")}
+                  className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  {t("users.addEngineer")}
+                </button>
+
+                <button
+                  onClick={openBulkModal}
+                  className="px-6 py-2 border rounded-lg text-indigo-700 hover:bg-indigo-50"
+                >
+                  {t("users.bulkCreateUser")}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-xl shadow overflow-hidden border">
@@ -169,6 +305,9 @@ export default function Users() {
                   {t("users.colEmail")}
                 </th>
                 <th className="px-6 py-3 text-start text-xs font-semibold">
+                  {t("users.colRole", { defaultValue: "Role" })}
+                </th>
+                <th className="px-6 py-3 text-start text-xs font-semibold">
                   {t("users.colSpecialization")}
                 </th>
                 <th className="px-6 py-3 text-start text-xs font-semibold">
@@ -177,21 +316,25 @@ export default function Users() {
                 <th className="px-6 py-3 text-start text-xs font-semibold">
                   {t("users.colActiveTickets")}
                 </th>
+                <th className="px-6 py-3 text-end text-xs font-semibold">
+                  {t("users.colActions", { defaultValue: "Actions" })}
+                </th>
               </tr>
             </thead>
 
             <tbody className="divide-y">
-              {users.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-6 text-gray-500">
+                  <td colSpan={7} className="text-center py-6 text-gray-500">
                     {t("users.noEngineersFound")}
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
+                filteredUsers.map((user) => (
                   <tr key={user.id}>
                     <td className="px-6 py-4">{user.name}</td>
                     <td className="px-6 py-4">{user.email}</td>
+                    <td className="px-6 py-4">{user.role}</td>
                     <td className="px-6 py-4">
                       {user.specialization?.name || t("ticketDetail.na")}
                     </td>
@@ -203,6 +346,30 @@ export default function Users() {
                     <td className="px-6 py-4">
                       {user._count?.assignedTickets || 0}{" "}
                       {t("users.activeSuffix")}
+                    </td>
+                    <td className="px-6 py-4 text-right space-x-2">
+                      {currentUser?.role !== "IT_ADMIN" && (
+                        <>
+                          <button
+                            onClick={() => openEditModal(user)}
+                            className="rounded-full border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                          >
+                            {t("users.edit", { defaultValue: "Edit" })}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="rounded-full border border-red-600 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                          >
+                            {t("users.delete", { defaultValue: "Delete" })}
+                          </button>
+                          <button
+                            onClick={() => openResetModal(user)}
+                            className="rounded-full border border-indigo-600 px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-50"
+                          >
+                            {t("users.resetPassword", { defaultValue: "Reset Password" })}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -279,6 +446,142 @@ export default function Users() {
                     ? t("users.importing")
                     : t("users.import")}
                 </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {editOpen && editUser && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg w-full max-w-md border border-slate-200 shadow-lg">
+              <h3 className="text-xl font-semibold mb-3">
+                {t("users.editUser", { defaultValue: "Edit user" })}
+              </h3>
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {t("users.name", { defaultValue: "Name" })}
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="mt-2 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {t("users.email", { defaultValue: "Email" })}
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="mt-2 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {t("users.role", { defaultValue: "Role" })}
+                  </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    className="mt-2 block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  >
+                    <option value="USER">USER</option>
+                    <option value="TECHNICIAN">TECHNICIAN</option>
+                    <option value="IT_ADMIN">IT_ADMIN</option>
+                    <option value="IT_MANAGER">IT_MANAGER</option>
+                    <option value="SOFTWARE_ENGINEER">SOFTWARE_ENGINEER</option>
+                    {currentUser?.role === "SUPER_ADMIN" && (
+                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                    )}
+                  </select>
+                </div>
+                {(editRole === "TECHNICIAN" || editRole === "IT_ADMIN") && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t("users.specialization", { defaultValue: "Specialization" })}
+                    </label>
+                    <select
+                      value={editSpecializationId}
+                      onChange={(e) => setEditSpecializationId(e.target.value)}
+                      className="mt-2 block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    >
+                      <option value="">{t("users.selectSpecialization")}</option>
+                      {bulkSpecializations.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeEditModal}
+                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    {t("common.cancel", { defaultValue: "Cancel" })}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    {t("users.saveChanges", { defaultValue: "Save changes" })}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {resetOpen && selectedUser && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg w-full max-w-md border border-slate-200 shadow-lg">
+              <h3 className="text-xl font-semibold mb-3">
+                {t("users.resetPasswordFor", {
+                  defaultValue: "Reset password for {{name}}",
+                  name: selectedUser.name,
+                })}
+              </h3>
+              <form onSubmit={handleResetSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {t("users.newPassword", { defaultValue: "New password" })}
+                  </label>
+                  <input
+                    type="password"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    className="mt-2 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </div>
+                {resetError && (
+                  <div className="text-sm text-red-600">{resetError}</div>
+                )}
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeResetModal}
+                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    {t("common.cancel", { defaultValue: "Cancel" })}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {resetLoading
+                      ? t("common.saving", { defaultValue: "Saving..." })
+                      : t("users.resetPassword", { defaultValue: "Reset Password" })}
+                  </button>
+                </div>
               </form>
             </div>
           </div>

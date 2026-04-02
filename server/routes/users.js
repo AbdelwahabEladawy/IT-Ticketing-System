@@ -15,8 +15,8 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
-// Get all users (IT Manager, IT Admin and Super Admin only)
-router.get('/', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+// Get all users
+router.get('/', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -28,7 +28,12 @@ router.get('/', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN')
         isOnline: true,
         lastSeenAt: true,
         specialization: true,
-        createdAt: true
+        createdAt: true,
+        _count: {
+          select: {
+            assignedTickets: true,
+          },
+        },
       }
     });
 
@@ -92,8 +97,8 @@ router.get('/technicians', authenticate, async (req, res) => {
   }
 });
 
-// Create user (IT Manager and Super Admin only)
-router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN'), [
+// Create user (Engineer roles except IT_ADMIN)
+router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), [
   body('email').isEmail().withMessage('البريد الإلكتروني غير صحيح'),
   body('password').isLength({ min: 6 }).withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
   body('name').trim().notEmpty().withMessage('الاسم مطلوب'),
@@ -210,6 +215,154 @@ router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN'), [
   }
 });
 
+router.patch('/:id/password', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), [
+  body('newPassword').trim().isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (targetUser.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Cannot reset password for SUPER_ADMIN' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword }
+    });
+
+    await createAuditLog(
+      'USER_PASSWORD_RESET',
+      `Password reset for user ${targetUser.email}`,
+      req.user.id,
+      targetUser.id
+    );
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.patch('/:id', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), [
+  body('name').optional().trim().notEmpty().withMessage('Name is required'),
+  body('email').optional().isEmail().withMessage('Valid email is required'),
+  body('role').optional().isIn(['USER', 'TECHNICIAN', 'IT_ADMIN', 'IT_MANAGER', 'SUPER_ADMIN', 'SOFTWARE_ENGINEER']).withMessage('Invalid role'),
+  body('specializationId').optional().isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { name, email, role, specializationId } = req.body;
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (targetUser.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Cannot update SUPER_ADMIN' });
+    }
+
+    const updateData = {};
+    if (name) updateData.name = name.trim();
+    if (email) {
+      const normalizedEmail = email.toLowerCase().trim();
+      const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+      if (existingUser && existingUser.id !== id) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
+      updateData.email = normalizedEmail;
+    }
+
+    if (role) {
+      if (targetUser.role === 'SUPER_ADMIN' && role !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'Cannot change SUPER_ADMIN role' });
+      }
+      if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'Cannot assign SUPER_ADMIN role' });
+      }
+      updateData.role = role;
+    }
+
+    if (specializationId) {
+      const specialization = await prisma.specialization.findUnique({ where: { id: specializationId } });
+      if (!specialization) {
+        return res.status(400).json({ error: 'Specialization not found' });
+      }
+      updateData.specializationId = specializationId;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      include: { specialization: true }
+    });
+
+    await createAuditLog(
+      'USER_UPDATED',
+      `User ${targetUser.email} updated by ${req.user.email}`,
+      req.user.id,
+      updatedUser.id,
+      { before: targetUser, after: updatedUser }
+    );
+
+    res.json({ user: updatedUser });
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/:id', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user.id === id) {
+      return res.status(400).json({ error: 'Cannot delete yourself' });
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (targetUser.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Cannot delete SUPER_ADMIN' });
+    }
+
+    await prisma.user.delete({ where: { id } });
+
+    await createAuditLog(
+      'USER_DELETED',
+      `User ${targetUser.email} deleted by ${req.user.email}`,
+      req.user.id,
+      targetUser.id
+    );
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.patch('/:id/status', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN'), async (req, res) => {
   res.status(410).json({
     error: 'Manual technician status is deprecated. Presence is now automatic.'
@@ -221,7 +374,7 @@ router.patch('/:id/status', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'S
 router.post(
   '/bulk-technicians',
   authenticate,
-  authorize('IT_MANAGER', 'SUPER_ADMIN'),
+  authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'),
   upload.single('file'),
   [
     body('role').optional().isIn(['USER', 'TECHNICIAN']).withMessage('role must be USER or TECHNICIAN'),
