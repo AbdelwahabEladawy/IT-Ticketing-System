@@ -16,6 +16,8 @@ import presenceRoutes from './routes/presence.js';
 import { setupPresenceWebSocket } from './services/wsPresence.js';
 import { runPresenceSweeper } from './services/presenceService.js';
 import schedulingRoutes from './features/scheduling/scheduling.routes.js';
+import llmRoutes from './routes/llm.js';
+import { warmupOllamaModel } from './services/ollamaService.js';
 import { startSchedulingWorker } from './features/scheduling/scheduling.worker.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +42,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/llm', llmRoutes);
 app.use('/api/scheduling-tickets', schedulingRoutes);
 
 app.get('/api/health', (req, res) => {
@@ -58,5 +61,8 @@ startSchedulingWorker();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
+  warmupOllamaModel().catch((error) => {
+    console.warn('Ollama warmup failed:', error?.message || error);
+  });
 });
 

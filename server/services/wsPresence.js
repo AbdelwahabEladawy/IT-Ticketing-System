@@ -27,6 +27,16 @@ export const setupPresenceWebSocket = (httpServer) => {
         await markOnline(userId, tabId || null, true);
       } else if (pathname === '/ws/ticket-messages') {
         registerTicketMessageSocket(userId, socket);
+        socket.on('message', (raw) => {
+          try {
+            const data = JSON.parse(raw.toString());
+            if (data.type === 'ping' && socket.readyState === socket.OPEN) {
+              socket.send(JSON.stringify({ type: 'pong', t: Date.now() }));
+            }
+          } catch {
+            // ignore malformed client messages
+          }
+        });
         return;
       } else {
         socket.close(1008, 'Unknown WebSocket path');

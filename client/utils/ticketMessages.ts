@@ -2,13 +2,95 @@ import { getToken } from './auth';
 
 let socket: WebSocket | null = null;
 const listeners = new Set<(payload: any) => void>();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 const getWsBaseUrl = () => {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-  return apiBase
-    .replace('/api', '')
-    .replace('http://', 'ws://')
-    .replace('https://', 'wss://');
+  let base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').trim();
+  // HTTP API lives at .../api; WS is on the same host without the /api suffix.
+  base = base.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(base)) {
+    base = `http://${base}`;
+  }
+  return base.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+};
+
+const clearTimers = () => {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+};
+
+const notifyListeners = (payload: any) => {
+  for (const listener of Array.from(listeners)) {
+    try {
+      listener(payload);
+    } catch {
+      // ignore listener errors
+    }
+  }
+};
+
+const createSocket = () => {
+  if (typeof window === 'undefined') return;
+
+  const token = getToken();
+  if (!token) return;
+
+  const wsBase = getWsBaseUrl();
+  const socketUrl = `${wsBase}/ws/ticket-messages?token=${encodeURIComponent(token)}`;
+
+  try {
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      socket.close();
+    }
+  } catch {
+    // ignore
+  }
+
+  socket = new WebSocket(socketUrl);
+
+  socket.onopen = () => {
+    console.debug('Ticket WS connected.');
+    clearTimers();
+
+    heartbeatTimer = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 25000);
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      notifyListeners(payload);
+    } catch {
+      // ignore malformed payload
+    }
+  };
+
+  socket.onclose = () => {
+    console.warn('Ticket WS closed. Attempting reconnect...');
+    socket = null;
+    clearTimers();
+    if (listeners.size > 0 && !reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        createSocket();
+      }, 2000);
+    }
+  };
+
+  socket.onerror = (error) => {
+    console.warn('Ticket WS error:', error);
+  };
 };
 
 export const connectTicketMessages = (onPayload: (payload: any) => void) => {
@@ -19,36 +101,10 @@ export const connectTicketMessages = (onPayload: (payload: any) => void) => {
 
   listeners.add(onPayload);
 
-  // If socket is already connected, just register the listener.
   if (socket && socket.readyState === WebSocket.OPEN) return;
-  if (socket && socket.readyState !== WebSocket.CLOSED) return;
+  if (socket && socket.readyState === WebSocket.CONNECTING) return;
 
-  try {
-    if (socket) socket.close();
-  } catch {
-    // ignore
-  }
-  socket = null;
-
-  const wsBase = getWsBaseUrl();
-  socket = new WebSocket(
-    `${wsBase}/ws/ticket-messages?token=${encodeURIComponent(token)}`
-  );
-
-  socket.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(event.data);
-      for (const listener of Array.from(listeners)) {
-        try {
-          listener(payload);
-        } catch {
-          // ignore listener errors
-        }
-      }
-    } catch {
-      // ignore malformed payload
-    }
-  };
+  createSocket();
 };
 
 export const disconnectTicketMessages = (onPayload?: (payload: any) => void) => {
@@ -58,13 +114,16 @@ export const disconnectTicketMessages = (onPayload?: (payload: any) => void) => 
     listeners.clear();
   }
 
-  if (listeners.size === 0 && socket) {
-    try {
-      socket.close();
-    } catch {
-      // ignore
+  if (listeners.size === 0) {
+    clearTimers();
+    if (socket) {
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+      socket = null;
     }
-    socket = null;
   }
 };
 

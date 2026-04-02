@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { broadcastToUser } from './wsTicketMessages.js';
+import { broadcastToUser, broadcastToAll } from './wsTicketMessages.js';
 
 const prisma = new PrismaClient();
 
@@ -57,11 +57,14 @@ export const broadcastTicketListUpdated = async ({ ticketId, event, ticket, oldT
     for (const u of itAdmins) push(u.id);
   }
 
-  broadcastToMany(recipients, {
+  const payload = {
     type: DASHBOARD_EVENT_TYPE,
     ticketId,
     event,
     t: Date.now()
-  });
+  };
+
+  broadcastToMany(recipients, payload);
+  broadcastToAll(payload);
 };
 

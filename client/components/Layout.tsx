@@ -7,6 +7,7 @@ import { getCurrentUser, removeToken, User } from "../utils/auth";
 import api from "../utils/api";
 import { stopPresence } from "../utils/presence";
 import SendSuggestionModal from "./SendSuggestionModal";
+import ChatBotModal from "./ChatBotModal";
 import { connectTicketMessages, disconnectTicketMessages } from "../utils/ticketMessages";
 import LanguageSwitcher from "./LanguageSwitcher";
 
@@ -596,6 +597,8 @@ export default function Layout({ children }: LayoutProps) {
         onClose={() => setSuggestionModalOpen(false)}
         onSubmitted={() => loadUnseenSuggestions()}
       />
+
+      <ChatBotModal />
 
       {user?.mustChangePassword && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

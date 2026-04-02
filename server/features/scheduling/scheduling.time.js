@@ -129,6 +129,33 @@ export const parseYearlyMonthDay = (month, day) => {
   return { month: parsedMonth, day: parsedDay };
 };
 
+export const isYearlyScheduleDatePastThisYear = ({
+  month,
+  day,
+  timeOfDay = DEFAULT_SCHEDULE_TIME_OF_DAY,
+  timezone = DEFAULT_SCHEDULE_TIMEZONE,
+  fromDate = new Date()
+}) => {
+  const normalizedZone = normalizeTimezone(timezone);
+  const normalizedTime = normalizeTimeOfDay(timeOfDay);
+  const parsed = parseYearlyMonthDay(month, day);
+  const [hourRaw, minuteRaw] = normalizedTime.split(':').map(Number);
+  const localParts = getLocalPartsInTimeZone(fromDate, normalizedZone);
+  const currentYear = localParts.year;
+
+  if (!isValidDayForMonth(currentYear, parsed.month, parsed.day)) {
+    return false;
+  }
+
+  if (parsed.month < localParts.month) return true;
+  if (parsed.month > localParts.month) return false;
+  if (parsed.day < localParts.day) return true;
+  if (parsed.day > localParts.day) return false;
+  if (hourRaw < localParts.hour) return true;
+  if (hourRaw > localParts.hour) return false;
+  return minuteRaw <= localParts.minute;
+};
+
 const toUtcDateFromZonedLocal = ({ year, month, day, hour, minute, timeZone }) => {
   if (!isValidDayForMonth(year, month, day)) {
     return null;

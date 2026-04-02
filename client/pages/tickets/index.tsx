@@ -46,19 +46,29 @@ export default function Tickets() {
     }
   };
 
+  const loadTicketsRef = useRef(loadTickets);
+  loadTicketsRef.current = loadTickets;
+
   const scheduleTicketsReload = () => {
     if (typeof window === 'undefined') return;
     if (reloadTimerRef.current) return;
 
     reloadTimerRef.current = window.setTimeout(() => {
       reloadTimerRef.current = null;
-      loadTickets({ silent: true });
+      void loadTicketsRef.current({ silent: true });
     }, 300);
+  };
+
+  const shouldReloadTicketsFromWs = (payload: any) => {
+    if (!payload) return false;
+    if (payload.type === 'ticket_list_updated') return true;
+    if (payload.type === 'notification_created' && payload.notification?.ticketId) return true;
+    return false;
   };
 
   useEffect(() => {
     const onPayload = (payload: any) => {
-      if (!payload || payload.type !== 'ticket_list_updated') return;
+      if (!shouldReloadTicketsFromWs(payload)) return;
       scheduleTicketsReload();
     };
 
@@ -86,6 +96,11 @@ export default function Tickets() {
       USER_ACTION_NEEDED: 'bg-red-100 text-red-800 border border-red-200'
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const trimDescription = (text: string | null | undefined, maxLength = 50) => {
+    const value = text?.trim() || '';
+    return value.length > maxLength ? `${value.substring(0, maxLength)}...` : value;
   };
 
   if (loading) {
@@ -132,7 +147,7 @@ export default function Tickets() {
                   <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
                       <div className="text-sm font-medium text-gray-900 break-words">{ticket.title}</div>
-                      <div className="text-sm text-gray-500 break-words line-clamp-2">{ticket.description.substring(0, 50)}...</div>
+                      <div className="text-sm text-gray-500 break-words line-clamp-2">{trimDescription(ticket.description)}</div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap align-top">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(ticket.status)}`}>

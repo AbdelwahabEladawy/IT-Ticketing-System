@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from '../utils/auditLog.js';
 import { features } from '../config/features.js';
-import { broadcastToUser } from './wsTicketMessages.js';
+import { broadcastTicketListUpdated } from './wsTicketEvents.js';
 import { notifyFromTemplate } from '../utils/notifications.js';
 
 const prisma = new PrismaClient();
@@ -215,31 +215,6 @@ export const rebalanceTeam = async ({ specializationId, trigger, actorUserId = n
       });
 
       if (successfulMoves.length > 0) {
-        const [globalAdmins, itAdminSpec] = await Promise.all([
-          prisma.user.findMany({
-            where: { role: { in: ['SUPER_ADMIN', 'IT_MANAGER'] } },
-            select: { id: true }
-          }),
-          prisma.specialization.findUnique({
-            where: { name: 'IT Admin' },
-            select: { id: true }
-          })
-        ]);
-
-        const itAdmins =
-          itAdminSpec && itAdminSpec.id === specializationId
-            ? await prisma.user.findMany({
-                where: { role: 'IT_ADMIN', specializationId: itAdminSpec.id },
-                select: { id: true }
-              })
-            : [];
-
-        const baseRecipients = new Set([
-          ...globalAdmins.map((u) => u.id),
-          ...itAdmins.map((u) => u.id)
-        ]);
-
-        // Realtime dashboard/tickets refresh (debounced on client).
         for (const move of successfulMoves) {
           const t = ticketById.get(move.ticketId);
           const createdById = t?.createdById ?? null;
@@ -279,21 +254,24 @@ export const rebalanceTeam = async ({ specializationId, trigger, actorUserId = n
             );
           }
 
-          const payload = {
-            type: 'ticket_list_updated',
+          const freshTicket = await prisma.ticket.findUnique({
+            where: { id: move.ticketId },
+            select: { id: true, createdById: true, assignedToId: true, specializationId: true }
+          });
+
+          await broadcastTicketListUpdated({
             ticketId: move.ticketId,
             event: 'TICKET_REBALANCED',
-            t: Date.now()
-          };
-
-          const recipients = new Set(baseRecipients);
-          if (move.oldAssigneeId) recipients.add(move.oldAssigneeId);
-          if (move.newAssigneeId) recipients.add(move.newAssigneeId);
-          if (createdById) recipients.add(createdById);
-
-          for (const recipientId of recipients) {
-            broadcastToUser(recipientId, payload);
-          }
+            ticket: freshTicket,
+            oldTicket:
+              move.oldAssigneeId != null
+                ? {
+                    assignedToId: move.oldAssigneeId,
+                    createdById: createdById ?? undefined,
+                    specializationId: t?.specializationId ?? undefined
+                  }
+                : null
+          });
         }
       }
 

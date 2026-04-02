@@ -13,7 +13,11 @@ import {
   SCHEDULE_TYPE_YEARLY,
   SCHEDULING_ALLOWED_ROLES
 } from './scheduling.constants.js';
-import { computeNextRunAt, normalizeTimeOfDay, normalizeTimezone } from './scheduling.time.js';
+import {
+  computeNextRunAt,
+  normalizeTimeOfDay,
+  normalizeTimezone
+} from './scheduling.time.js';
 
 const prisma = new PrismaClient();
 
@@ -149,14 +153,14 @@ const toTaskDto = (task) => {
     updatedAt: task.updatedAt,
     latestRun: latestRun
       ? {
-          id: latestRun.id,
-          scheduledFor: latestRun.scheduledFor,
-          status: latestRun.status,
-          trigger: latestRun.trigger,
-          ticketId: latestRun.ticketId,
-          errorMessage: latestRun.errorMessage,
-          executedAt: latestRun.executedAt
-        }
+        id: latestRun.id,
+        scheduledFor: latestRun.scheduledFor,
+        status: latestRun.status,
+        trigger: latestRun.trigger,
+        ticketId: latestRun.ticketId,
+        errorMessage: latestRun.errorMessage,
+        executedAt: latestRun.executedAt
+      }
       : null
   };
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import Layout from "../../components/Layout";
@@ -65,6 +65,8 @@ export default function TicketDetail() {
   const [resolvedComment, setResolvedComment] = useState("");
   const [resolvedCommentLoading, setResolvedCommentLoading] = useState(false);
 
+  const ticketReloadTimerRef = useRef<number | null>(null);
+
   const dateLocale = i18n.language?.startsWith("ar") ? ar : undefined;
   const localeStr = i18n.language?.startsWith("ar") ? "ar-SA" : "en-GB";
 
@@ -78,12 +80,31 @@ export default function TicketDetail() {
     }
   }, [id]);
 
+  const scheduleTicketDetailReload = () => {
+    if (typeof window === "undefined" || !ticketId) return;
+    if (ticketReloadTimerRef.current) return;
+
+    ticketReloadTimerRef.current = window.setTimeout(() => {
+      ticketReloadTimerRef.current = null;
+      void loadTicket({ silent: true });
+      void loadMessages();
+    }, 300);
+  };
+
   useEffect(() => {
     if (!ticketId) return;
 
     const onPayload = (payload: any) => {
-      if (!payload || payload.type !== "ticket_message_created") return;
-      if (payload.ticketId !== ticketId) return;
+      if (!payload) return;
+
+      if (payload.type === "ticket_list_updated" && payload.ticketId === ticketId) {
+        scheduleTicketDetailReload();
+        return;
+      }
+
+      if (payload.type !== "ticket_message_created" || payload.ticketId !== ticketId) {
+        return;
+      }
 
       const incoming = payload.message as TicketMessage;
 
@@ -110,18 +131,32 @@ export default function TicketDetail() {
     connectTicketMessages(onPayload);
 
     return () => {
+      if (ticketReloadTimerRef.current) {
+        clearTimeout(ticketReloadTimerRef.current);
+        ticketReloadTimerRef.current = null;
+      }
       disconnectTicketMessages(onPayload);
     };
   }, [ticketId]);
 
-  const loadTicket = async () => {
+  const loadTicket = async (opts?: { silent?: boolean }) => {
+    const targetId = ticketId || id;
+    if (!targetId || Array.isArray(targetId)) return;
+
     try {
-      const response = await api.get(`/tickets/${id}`);
+      const silent = opts?.silent ?? false;
+      if (!silent) setLoading(true);
+      const response = await api.get(`/tickets/${targetId}`);
       setTicket(response.data.ticket);
-    } catch (error) {
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 403 || status === 404) {
+        router.push("/tickets");
+        return;
+      }
       console.error("Failed to load ticket");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
@@ -150,8 +185,11 @@ export default function TicketDetail() {
   };
 
   const loadMessages = async () => {
+    const targetId = ticketId || id;
+    if (!targetId || Array.isArray(targetId)) return;
+
     try {
-      const response = await api.get(`/tickets/${id}/messages`);
+      const response = await api.get(`/tickets/${targetId}/messages`);
       setMessages(response.data.messages || []);
     } catch (error) {
       console.error("Failed to load ticket messages");
