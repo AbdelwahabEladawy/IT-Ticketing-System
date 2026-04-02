@@ -1,4 +1,5 @@
 import { getToken } from './auth';
+import { getWsBaseFromApiUrl } from './wsBaseUrl';
 
 const HEARTBEAT_MS = Number(process.env.NEXT_PUBLIC_PRESENCE_HEARTBEAT_MS || 15000);
 
@@ -51,10 +52,7 @@ export const startPresence = () => {
   if (!token || typeof window === 'undefined') return;
   tabId = generateTabId();
 
-  const wsBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api')
-    .replace('/api', '')
-    .replace('http://', 'ws://')
-    .replace('https://', 'wss://');
+  const wsBase = getWsBaseFromApiUrl();
   socket = new WebSocket(`${wsBase}/ws/presence?token=${encodeURIComponent(token)}&tabId=${encodeURIComponent(tabId)}`);
   socket.onopen = () => {
     safeSendHeartbeat();

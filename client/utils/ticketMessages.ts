@@ -1,19 +1,10 @@
 import { getToken } from './auth';
+import { getWsBaseFromApiUrl } from './wsBaseUrl';
 
 let socket: WebSocket | null = null;
 const listeners = new Set<(payload: any) => void>();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
-const getWsBaseUrl = () => {
-  let base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').trim();
-  // HTTP API lives at .../api; WS is on the same host without the /api suffix.
-  base = base.replace(/\/api\/?$/i, '').replace(/\/$/, '');
-  if (!/^https?:\/\//i.test(base)) {
-    base = `http://${base}`;
-  }
-  return base.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-};
 
 const clearTimers = () => {
   if (reconnectTimer) {
@@ -43,7 +34,7 @@ const createSocket = () => {
   const token = getToken();
   if (!token) return;
 
-  const wsBase = getWsBaseUrl();
+  const wsBase = getWsBaseFromApiUrl();
   const socketUrl = `${wsBase}/ws/ticket-messages?token=${encodeURIComponent(token)}`;
 
   try {
@@ -92,7 +83,6 @@ const createSocket = () => {
     console.warn('Ticket WS error:', error);
   };
 };
-
 export const connectTicketMessages = (onPayload: (payload: any) => void) => {
   if (typeof window === 'undefined') return;
 
