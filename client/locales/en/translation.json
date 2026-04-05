@@ -9,6 +9,7 @@
     "suggestionsInbox": "Suggestions Inbox",
     "users": "Engineers",
     "specializations": "Specializations",
+    "reassignmentRequests": "Reassignment Requests",
     "notifications": "Notifications",
     "markAllRead": "Mark all read",
     "noNotifications": "No notifications",
@@ -234,6 +235,9 @@
   },
   "common": {
     "loading": "Loading...",
-    "error": "Something went wrong"
+    "error": "Something went wrong",
+    "previous": "Previous",
+    "next": "Next",
+    "pageIndicator": "Page {{current}} of {{total}}"
   }
 }

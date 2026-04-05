@@ -19,6 +19,7 @@ export default function CreateUser() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState<any>(null);
+  const canCreateElevatedRoles = user?.role === 'SUPER_ADMIN';
 
   useEffect(() => {
     loadUser();
@@ -45,14 +46,15 @@ export default function CreateUser() {
     setLoading(true);
 
     try {
+      const targetRole = canCreateElevatedRoles ? formData.role : 'USER';
       const payload: any = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
-        role: formData.role
+        role: targetRole
       };
 
-      if (formData.role === 'TECHNICIAN' || formData.role === 'IT_ADMIN') {
+      if (targetRole === 'TECHNICIAN' || targetRole === 'IT_ADMIN') {
         if (!formData.specializationId) {
           setError(t('users.specRequiredEngineers'));
           setLoading(false);
@@ -149,26 +151,23 @@ export default function CreateUser() {
             <select
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value, specializationId: '' })}
+              disabled={!canCreateElevatedRoles}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
             >
               <option value="USER">{t('roles.USER')}</option>
-              <option value="TECHNICIAN">{t('roles.TECHNICIAN')}</option>
-              <option value="IT_ADMIN">{t('roles.IT_ADMIN')}</option>
-              {(user?.role === 'SUPER_ADMIN' || user?.role === 'IT_MANAGER') && (
+              {canCreateElevatedRoles && (
                 <>
+                  <option value="TECHNICIAN">{t('roles.TECHNICIAN')}</option>
+                  <option value="IT_ADMIN">{t('roles.IT_ADMIN')}</option>
                   <option value="IT_MANAGER">{t('roles.IT_MANAGER')}</option>
-                  {user?.role === 'SUPER_ADMIN' && (
-                    <>
-                      <option value="SUPER_ADMIN">{t('roles.SUPER_ADMIN')}</option>
-                      <option value="SOFTWARE_ENGINEER">{t('roles.SOFTWARE_ENGINEER')}</option>
-                    </>
-                  )}
+                  <option value="SUPER_ADMIN">{t('roles.SUPER_ADMIN')}</option>
+                  <option value="SOFTWARE_ENGINEER">{t('roles.SOFTWARE_ENGINEER')}</option>
                 </>
               )}
             </select>
           </div>
 
-          {(formData.role === 'TECHNICIAN' || formData.role === 'IT_ADMIN') && (
+          {canCreateElevatedRoles && (formData.role === 'TECHNICIAN' || formData.role === 'IT_ADMIN') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {t('users.colSpecialization')}

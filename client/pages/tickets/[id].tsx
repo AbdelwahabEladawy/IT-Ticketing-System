@@ -41,6 +41,31 @@ interface TicketMessage {
   toUser?: { id: string; name: string; email: string };
 }
 
+type ReassignmentRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "AUTO_APPROVED";
+
+interface ReassignmentRequest {
+  id: string;
+  ticketId: string;
+  requestedById: string;
+  fromEngineerId?: string | null;
+  toEngineerId: string;
+  status: ReassignmentRequestStatus;
+  reason?: string | null;
+  rejectionReason?: string | null;
+  autoApproveAt: string;
+  createdAt: string;
+  decidedAt?: string | null;
+  autoApprovedAt?: string | null;
+  requestedBy?: { id: string; name: string; email: string; role: string };
+  fromEngineer?: { id: string; name: string; email: string; role: string } | null;
+  toEngineer?: { id: string; name: string; email: string; role: string };
+  decidedBy?: { id: string; name: string; email: string; role: string } | null;
+}
+
 export default function TicketDetail() {
   const { t, i18n } = useTranslation();
   const clientMounted = useClientMounted();
@@ -64,6 +89,17 @@ export default function TicketDetail() {
 
   const [resolvedComment, setResolvedComment] = useState("");
   const [resolvedCommentLoading, setResolvedCommentLoading] = useState(false);
+  const [reassignmentRequests, setReassignmentRequests] = useState<
+    ReassignmentRequest[]
+  >([]);
+  const [reassignmentTargetId, setReassignmentTargetId] = useState("");
+  const [reassignmentReason, setReassignmentReason] = useState("");
+  const [reassignmentLoading, setReassignmentLoading] = useState(false);
+  const [decisionLoadingRequestId, setDecisionLoadingRequestId] = useState<
+    string | null
+  >(null);
+  const [decisionReason, setDecisionReason] = useState("");
+  const [nowTs, setNowTs] = useState(Date.now());
 
   const ticketReloadTimerRef = useRef<number | null>(null);
 
@@ -77,6 +113,7 @@ export default function TicketDetail() {
       loadTechnicians();
       loadSpecializations();
       loadMessages();
+      loadReassignmentRequests();
     }
   }, [id]);
 
@@ -88,6 +125,7 @@ export default function TicketDetail() {
       ticketReloadTimerRef.current = null;
       void loadTicket({ silent: true });
       void loadMessages();
+      void loadReassignmentRequests();
     }, 300);
   };
 
@@ -138,6 +176,30 @@ export default function TicketDetail() {
       disconnectTicketMessages(onPayload);
     };
   }, [ticketId]);
+
+  useEffect(() => {
+    if (!ticketId) return;
+    const intervalId = window.setInterval(() => {
+      void loadReassignmentRequests();
+    }, 10000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [ticketId]);
+
+  useEffect(() => {
+    if (user?.role !== "SUPER_ADMIN") return;
+    const hasPending = reassignmentRequests.some((r) => r.status === "PENDING");
+    if (!hasPending) return;
+
+    const timer = window.setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [user?.role, reassignmentRequests]);
 
   const loadTicket = async (opts?: { silent?: boolean }) => {
     const targetId = ticketId || id;
@@ -197,10 +259,35 @@ export default function TicketDetail() {
     }
   };
 
+  const loadReassignmentRequests = async () => {
+    const targetId = ticketId || id;
+    if (!targetId || Array.isArray(targetId)) return;
+
+    try {
+      const response = await api.get(
+        `/tickets/${targetId}/reassignment-requests`,
+      );
+      setReassignmentRequests(response.data.requests || []);
+    } catch (error) {
+      console.error("Failed to load reassignment requests");
+      setReassignmentRequests([]);
+    }
+  };
+
   const handleStatusChange = async (newStatus: string) => {
+    if (!ticketId) return;
+
+    if (user?.role === "USER") {
+      const isOwner = ticket?.createdBy?.id === user.id;
+      if (!isOwner || newStatus !== "CLOSED") {
+        console.error("Users can only close their own tickets");
+        return;
+      }
+    }
+
     setStatusLoading(newStatus);
     try {
-      await api.patch(`/tickets/${id}/status`, { status: newStatus });
+      await api.patch(`/tickets/${ticketId}/status`, { status: newStatus });
       await loadTicket();
     } catch (error) {
       console.error("Failed to update status");
@@ -313,6 +400,51 @@ export default function TicketDetail() {
     }
   };
 
+  const handleCreateReassignmentRequest = async () => {
+    if (!ticketId || !reassignmentTargetId) return;
+    setReassignmentLoading(true);
+    try {
+      await api.post(`/tickets/${ticketId}/reassignment-requests`, {
+        toEngineerId: reassignmentTargetId,
+        reason: reassignmentReason.trim() || undefined,
+      });
+      setReassignmentTargetId("");
+      setReassignmentReason("");
+      await Promise.all([loadReassignmentRequests(), loadTicket()]);
+    } catch (error) {
+      console.error("Failed to create reassignment request", error);
+    } finally {
+      setReassignmentLoading(false);
+    }
+  };
+
+  const handleApproveReassignmentRequest = async (requestId: string) => {
+    setDecisionLoadingRequestId(requestId);
+    try {
+      await api.post(`/tickets/reassignment-requests/${requestId}/approve`);
+      await Promise.all([loadReassignmentRequests(), loadTicket()]);
+    } catch (error) {
+      console.error("Failed to approve reassignment request", error);
+    } finally {
+      setDecisionLoadingRequestId(null);
+    }
+  };
+
+  const handleRejectReassignmentRequest = async (requestId: string) => {
+    setDecisionLoadingRequestId(requestId);
+    try {
+      await api.post(`/tickets/reassignment-requests/${requestId}/reject`, {
+        reason: decisionReason.trim() || undefined,
+      });
+      setDecisionReason("");
+      await loadReassignmentRequests();
+    } catch (error) {
+      console.error("Failed to reject reassignment request", error);
+    } finally {
+      setDecisionLoadingRequestId(null);
+    }
+  };
+
   const formatStatusLabel = (s: string) => formatTicketStatusLabel(s, t);
 
   const formatProblemTypeLabel = (p: string) =>
@@ -326,6 +458,45 @@ export default function TicketDetail() {
     if (type === "RESOLVED_COMMENT")
       return t("ticketDetail.msgFollowUpResolved");
     return t("ticketDetail.msgUserReply");
+  };
+
+  const formatReassignmentStatus = (status: ReassignmentRequestStatus) => {
+    const labels: Record<ReassignmentRequestStatus, string> = {
+      PENDING: t("ticketDetail.reassignRequest.pending", {
+        defaultValue: "Pending",
+      }),
+      APPROVED: t("ticketDetail.reassignRequest.approved", {
+        defaultValue: "Approved",
+      }),
+      REJECTED: t("ticketDetail.reassignRequest.rejected", {
+        defaultValue: "Rejected",
+      }),
+      AUTO_APPROVED: t("ticketDetail.reassignRequest.autoApproved", {
+        defaultValue: "Auto-Approved",
+      }),
+    };
+    return labels[status];
+  };
+
+  const getReassignmentStatusBadge = (status: ReassignmentRequestStatus) => {
+    const styles: Record<ReassignmentRequestStatus, string> = {
+      PENDING: "bg-amber-100 text-amber-800",
+      APPROVED: "bg-green-100 text-green-800",
+      REJECTED: "bg-rose-100 text-rose-800",
+      AUTO_APPROVED: "bg-blue-100 text-blue-800",
+    };
+    return styles[status];
+  };
+
+  const formatRemainingTimer = (autoApproveAt: string) => {
+    const remainingMs = new Date(autoApproveAt).getTime() - nowTs;
+    if (remainingMs <= 0) return "00:00";
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
   };
 
   if (loading) {
@@ -354,8 +525,22 @@ export default function TicketDetail() {
   const canUpdateStatus =
     (user?.role === "TECHNICIAN" && ticket.assignedTo?.id === user.id) ||
     (user?.role === "IT_ADMIN" && ticket.specialization?.name === "IT Admin");
+  const canCloseOwnTicket =
+    user?.role === "USER" &&
+    ticket.createdBy?.id === user.id &&
+    ticket.status !== "CLOSED";
   const canAssign = user?.role === "SUPER_ADMIN" && ticket.problemType === "CUSTOM";
   const canReassign = user?.role === "SUPER_ADMIN";
+  const canViewReassignmentRequests =
+    user?.role === "SUPER_ADMIN" ||
+    user?.role === "TECHNICIAN" ||
+    user?.role === "IT_ADMIN";
+  const canCreateReassignmentRequest =
+    (user?.role === "TECHNICIAN" && ticket.assignedTo?.id === user.id) ||
+    (user?.role === "IT_ADMIN" && ticket.specialization?.name === "IT Admin");
+  const selectableReassignmentTargets = technicians.filter(
+    (tech) => tech.id !== ticket.assignedTo?.id,
+  );
 
   return (
     <Layout>
@@ -537,6 +722,200 @@ export default function TicketDetail() {
                       {t("ticketDetail.cancel")}
                     </button>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {canCloseOwnTicket && (
+            <div className="border-t border-gray-200 pt-4">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                {t("ticketDetail.updateStatus")}
+              </h3>
+              <button
+                type="button"
+                onClick={() => handleStatusChange("CLOSED")}
+                disabled={statusLoading !== null}
+                className="px-4 py-2 bg-gradient-to-r from-gray-700 to-gray-900 text-white rounded-lg hover:from-gray-800 hover:to-black transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {statusLoading === "CLOSED" ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>{t("ticketDetail.updating")}</span>
+                  </>
+                ) : (
+                  formatStatusLabel("CLOSED")
+                )}
+              </button>
+            </div>
+          )}
+
+          {canViewReassignmentRequests && (
+            <div className="border-t border-gray-200 pt-4">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                {t("ticketDetail.reassignRequest.sectionTitle", {
+                  defaultValue: "Reassignment Request",
+                })}
+              </h3>
+
+              {canCreateReassignmentRequest && (
+                <div className="space-y-3 mb-5">
+                  {selectableReassignmentTargets.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      {t("ticketDetail.reassignRequest.noTargets", {
+                        defaultValue:
+                          "No alternative engineers are available for reassignment.",
+                      })}
+                    </p>
+                  ) : (
+                    <>
+                      <select
+                        value={reassignmentTargetId}
+                        onChange={(e) => setReassignmentTargetId(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                      >
+                        <option value="">
+                          {t("ticketDetail.reassignRequest.selectTarget", {
+                            defaultValue: "Select target engineer",
+                          })}
+                        </option>
+                        {selectableReassignmentTargets.map((tech) => (
+                          <option key={tech.id} value={tech.id}>
+                            {tech.name} -{" "}
+                            {tech.specialization?.name ||
+                              t("ticketDetail.noSpecInOption")}
+                          </option>
+                        ))}
+                      </select>
+
+                      <textarea
+                        value={reassignmentReason}
+                        onChange={(e) => setReassignmentReason(e.target.value)}
+                        rows={3}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                        placeholder={t("ticketDetail.reassignRequest.reasonPlaceholder", {
+                          defaultValue: "Optional reason for reassignment request...",
+                        })}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleCreateReassignmentRequest}
+                        disabled={!reassignmentTargetId || reassignmentLoading}
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {reassignmentLoading
+                          ? t("ticketDetail.sending")
+                          : t("ticketDetail.reassignRequest.submit", {
+                              defaultValue: "Send reassignment request",
+                            })}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {user?.role === "SUPER_ADMIN" && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t("ticketDetail.reassignRequest.rejectReason", {
+                      defaultValue: "Reject reason (optional)",
+                    })}
+                  </label>
+                  <input
+                    type="text"
+                    value={decisionReason}
+                    onChange={(e) => setDecisionReason(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                    placeholder={t("ticketDetail.reassignRequest.rejectReasonPlaceholder", {
+                      defaultValue: "Provide reason if you reject this request",
+                    })}
+                  />
+                </div>
+              )}
+
+              {reassignmentRequests.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  {t("ticketDetail.reassignRequest.none", {
+                    defaultValue: "No reassignment requests for this ticket.",
+                  })}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {reassignmentRequests.map((request) => {
+                    const isPending = request.status === "PENDING";
+                    const isActionLoading =
+                      decisionLoadingRequestId === request.id;
+                    return (
+                      <div
+                        key={request.id}
+                        className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-medium text-gray-900">
+                            {request.requestedBy?.name || t("ticketDetail.unknown")} {"->"}{" "}
+                            {request.toEngineer?.name || t("ticketDetail.unknown")}
+                          </div>
+                          <span
+                            className={`px-2 py-1 text-xs font-semibold rounded-full ${getReassignmentStatusBadge(request.status)}`}
+                          >
+                            {formatReassignmentStatus(request.status)}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-gray-500 mt-2">
+                          {new Date(request.createdAt).toLocaleString(localeStr)}
+                        </div>
+
+                        {request.reason && (
+                          <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
+                            {request.reason}
+                          </p>
+                        )}
+
+                        {request.rejectionReason && (
+                          <p className="text-sm text-rose-700 mt-2 whitespace-pre-wrap">
+                            {request.rejectionReason}
+                          </p>
+                        )}
+
+                        {user?.role === "SUPER_ADMIN" && isPending && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-amber-700 font-medium">
+                              {t("ticketDetail.reassignRequest.timeLeft", {
+                                defaultValue: "Auto-approval in",
+                              })}{" "}
+                              {formatRemainingTimer(request.autoApproveAt)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleApproveReassignmentRequest(request.id)
+                              }
+                              disabled={isActionLoading}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {t("ticketDetail.reassignRequest.approve", {
+                                defaultValue: "Approve",
+                              })}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRejectReassignmentRequest(request.id)
+                              }
+                              disabled={isActionLoading}
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-sm hover:bg-rose-700 disabled:opacity-50"
+                            >
+                              {t("ticketDetail.reassignRequest.reject", {
+                                defaultValue: "Reject",
+                              })}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -61,6 +61,50 @@ const T = {
       message: `تم إعادة تعيين التذكرة: ${p.title}`
     })
   },
+  REASSIGN_REQUEST_CREATED: {
+    en: (p) => ({
+      title: 'Reassignment request',
+      message: `${p.requester} requested reassignment to ${p.targetEngineer} for "${p.title}". Auto-approval in ${p.minutes} minutes.`
+    }),
+    ar: (p) => ({
+      title: 'طلب إعادة تعيين',
+      message: `${p.requester} طلب إعادة التعيين إلى ${p.targetEngineer} للتذكرة "${p.title}". اعتماد تلقائي خلال ${p.minutes} دقيقة.`
+    })
+  },
+  REASSIGN_REQUEST_APPROVED: {
+    en: (p) => ({
+      title: 'Reassignment approved',
+      message: `Reassignment approved for "${p.title}" to ${p.targetEngineer}.`
+    }),
+    ar: (p) => ({
+      title: 'تم اعتماد إعادة التعيين',
+      message: `تم اعتماد إعادة تعيين "${p.title}" إلى ${p.targetEngineer}.`
+    })
+  },
+  REASSIGN_REQUEST_AUTO_APPROVED: {
+    en: (p) => ({
+      title: 'Reassignment auto-approved',
+      message: `Reassignment auto-approved for "${p.title}" to ${p.targetEngineer}.`
+    }),
+    ar: (p) => ({
+      title: 'تم اعتماد إعادة التعيين تلقائياً',
+      message: `تم اعتماد إعادة تعيين "${p.title}" تلقائياً إلى ${p.targetEngineer}.`
+    })
+  },
+  REASSIGN_REQUEST_REJECTED: {
+    en: (p) => ({
+      title: 'Reassignment rejected',
+      message: p.rejectionReason
+        ? `Reassignment rejected for "${p.title}": ${p.rejectionReason}`
+        : `Reassignment rejected for "${p.title}".`
+    }),
+    ar: (p) => ({
+      title: 'تم رفض إعادة التعيين',
+      message: p.rejectionReason
+        ? `تم رفض إعادة التعيين للتذكرة "${p.title}": ${p.rejectionReason}`
+        : `تم رفض إعادة التعيين للتذكرة "${p.title}".`
+    })
+  },
   REBALANCE_NEW: {
     en: (p) => ({ title: 'New task', message: `New ticket assigned: ${p.title}` }),
     ar: (p) => ({ title: 'مهمة جديدة', message: `تم تعيين تذكرة جديدة: ${p.title}` })

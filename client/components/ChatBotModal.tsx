@@ -17,6 +17,7 @@ export default function ChatBotModal() {
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed) return;
+    const isFirstAssistantReply = !messages.some((m) => m.role === 'assistant');
 
     const newMessages: ChatMessage[] = [
       ...messages,
@@ -28,7 +29,10 @@ export default function ChatBotModal() {
     setError(null);
 
     try {
-      const response = await api.post('/llm/chat', { message: trimmed });
+      const response = await api.post('/llm/chat', {
+        message: trimmed,
+        isFirstMessage: isFirstAssistantReply,
+      });
       const answer = response.data?.answer?.trim() || 'No response from the model.';
       setMessages((prev) => [...prev, { role: 'assistant', text: answer }]);
     } catch (err: any) {
@@ -40,22 +44,22 @@ export default function ChatBotModal() {
 
   return (
     <>
-      {/* <button
+      <button
         type="button"
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-500/20 transition hover:bg-indigo-700"
       >
         <MessageCircle className="h-5 w-5" />
         Chat with Global AI
-      </button> */}
+      </button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 sm:p-6">
           <div className="w-full max-w-xl rounded-3xl border border-gray-200 bg-white shadow-2xl shadow-black/10">
             <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-5">
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Local Chat</h2>
-                <p className="text-xs text-gray-500">Ask the local Ollama model for help.</p>
+                <h2 className="text-base font-semibold text-gray-900">Global AI</h2>
+                <p className="text-xs text-gray-500">Ask the Global AI model for help.</p>
               </div>
               <button
                 type="button"
@@ -69,7 +73,7 @@ export default function ChatBotModal() {
             <div className="max-h-[60vh] space-y-3 overflow-y-auto px-4 py-4 sm:px-5">
               {messages.length === 0 ? (
                 <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-                  Ask a question and the local model will answer. If the answer is enough, no ticket is created.
+                  Ask a question and the Global AI model will answer. If the answer is enough, no ticket is created.
                 </div>
               ) : (
                 messages.map((message, index) => (

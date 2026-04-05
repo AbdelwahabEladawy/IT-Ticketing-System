@@ -19,11 +19,13 @@ interface Ticket {
   createdBy?: { name: string; email?: string };
   specialization?: { name: string };
 }
+const TICKETS_PAGE_SIZE = 10;
 
 export default function Tickets() {
   const { t } = useTranslation();
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -141,6 +143,16 @@ export default function Tickets() {
     return value.length > maxLength ? `${value.substring(0, maxLength)}...` : value;
   };
 
+  const totalPages = Math.max(1, Math.ceil(tickets.length / TICKETS_PAGE_SIZE));
+  const pageStart = (currentPage - 1) * TICKETS_PAGE_SIZE;
+  const paginatedTickets = tickets.slice(pageStart, pageStart + TICKETS_PAGE_SIZE);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   if (loading) {
     return (
       <Layout>
@@ -181,7 +193,7 @@ export default function Tickets() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {tickets.map((ticket) => (
+                {paginatedTickets.map((ticket) => (
                   <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
                       <div className="text-sm font-medium text-gray-900 break-words">{ticket.title}</div>
@@ -225,6 +237,35 @@ export default function Tickets() {
             </table>
             {tickets.length === 0 && (
               <div className="text-center py-12 text-gray-500">{t('tickets.none')}</div>
+            )}
+            {tickets.length > 0 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <p className="text-sm text-gray-600">
+                  {t('common.pageIndicator', {
+                    defaultValue: 'Page {{current}} of {{total}}',
+                    current: currentPage,
+                    total: totalPages
+                  })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={currentPage <= 1}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {t('common.previous', { defaultValue: 'Previous' })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {t('common.next', { defaultValue: 'Next' })}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

@@ -60,6 +60,7 @@ router.get('/', authenticate, async (req, res) => {
           assigned: tickets.filter(t => t.status === 'ASSIGNED').length,
           inProgress: tickets.filter(t => t.status === 'IN_PROGRESS').length,
           resolved: tickets.filter(t => t.status === 'RESOLVED').length,
+          closed: tickets.filter(t => t.status === 'CLOSED').length,
           overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length
         }
       };

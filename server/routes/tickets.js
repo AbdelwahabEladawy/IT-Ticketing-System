@@ -10,6 +10,13 @@ import { notifyTicketStatusChange, notifyFromTemplate } from '../utils/notificat
 import { broadcastToUser } from '../services/wsTicketMessages.js';
 import { broadcastTicketListUpdated } from '../services/wsTicketEvents.js';
 import { createResolvedTicketComment } from '../services/ticketResolvedCommentService.js';
+import {
+  createReassignmentRequest,
+  listReassignmentRequestsForTicket,
+  listReassignmentRequestsForSuperAdmin,
+  approveReassignmentRequest,
+  rejectReassignmentRequest
+} from '../services/reassignmentRequestService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -20,6 +27,27 @@ const SELF_ASSIGN_SPECIALIZATIONS = new Set([
   'Server/Admin',
   'Software Engineering'
 ]);
+const ELIGIBLE_ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN']);
+
+const getItAdminSpecializationId = async () => {
+  const itAdminSpec = await prisma.specialization.findUnique({
+    where: { name: 'IT Admin' },
+    select: { id: true }
+  });
+  return itAdminSpec?.id || null;
+};
+
+const canAccessTicket = async (user, ticket) => {
+  if (!user || !ticket) return false;
+  if (user.role === 'SUPER_ADMIN' || user.role === 'IT_MANAGER') return true;
+  if (user.role === 'USER') return ticket.createdById === user.id;
+  if (user.role === 'TECHNICIAN') return ticket.assignedToId === user.id;
+  if (user.role === 'IT_ADMIN') {
+    const itAdminSpecializationId = await getItAdminSpecializationId();
+    return Boolean(itAdminSpecializationId && ticket.specializationId === itAdminSpecializationId);
+  }
+  return false;
+};
 
 // Create ticket
 router.post('/', authenticate, checkPermission('create_ticket'), [
@@ -288,6 +316,194 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
+// List reassignment requests across tickets (Super Admin)
+router.get('/reassignment-requests', authenticate, authorize('SUPER_ADMIN'), async (req, res) => {
+  try {
+    const requests = await listReassignmentRequestsForSuperAdmin({
+      status: req.query.status || 'PENDING',
+      limit: req.query.limit || 200
+    });
+
+    res.json({
+      requests,
+      autoApprovalMinutes: Number(process.env.REASSIGNMENT_AUTO_APPROVAL_MINUTES || 15)
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error('List reassignment requests (super admin) error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// List reassignment requests for a single ticket
+router.get('/:id/reassignment-requests', authenticate, async (req, res) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        title: true,
+        createdById: true,
+        assignedToId: true,
+        specializationId: true
+      }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const allowed = await canAccessTicket(req.user, ticket);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const requests = await listReassignmentRequestsForTicket({
+      ticketId: req.params.id
+    });
+
+    res.json({
+      requests,
+      autoApprovalMinutes: Number(process.env.REASSIGNMENT_AUTO_APPROVAL_MINUTES || 15)
+    });
+  } catch (error) {
+    console.error('List reassignment requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Engineer creates reassignment request
+router.post(
+  '/:id/reassignment-requests',
+  authenticate,
+  [
+    body('toEngineerId')
+      .isString()
+      .trim()
+      .notEmpty()
+      .withMessage('toEngineerId is required'),
+    body('reason').optional().isString()
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const ticket = await prisma.ticket.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          title: true,
+          createdById: true,
+          assignedToId: true,
+          specializationId: true
+        }
+      });
+
+      if (!ticket) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+
+      if (!ELIGIBLE_ENGINEER_ROLES.has(req.user.role)) {
+        return res.status(403).json({ error: 'Only engineers can create reassignment requests' });
+      }
+
+      const allowed = await canAccessTicket(req.user, ticket);
+      if (!allowed) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if (!ticket.assignedToId) {
+        return res.status(400).json({ error: 'Ticket must have an assigned engineer first' });
+      }
+
+      if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+        return res.status(403).json({ error: 'Technician can request reassignment only for their assigned tickets' });
+      }
+
+      if (req.user.role === 'IT_ADMIN') {
+        const itAdminSpecializationId = await getItAdminSpecializationId();
+        if (!itAdminSpecializationId || ticket.specializationId !== itAdminSpecializationId) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      }
+
+      const request = await createReassignmentRequest({
+        ticket,
+        actor: req.user,
+        toEngineerId: req.body.toEngineerId,
+        reason: req.body.reason
+      });
+
+      res.status(201).json({ request });
+    } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('Create reassignment request error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// Super Admin approves reassignment request
+router.post('/reassignment-requests/:requestId/approve', authenticate, authorize('SUPER_ADMIN'), async (req, res) => {
+  try {
+    const result = await approveReassignmentRequest({
+      requestId: req.params.requestId,
+      actor: req.user,
+      source: 'MANUAL',
+      strict: true
+    });
+
+    res.json({
+      request: result.request,
+      ticket: result.updatedTicket
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error('Approve reassignment request error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Super Admin rejects reassignment request
+router.post(
+  '/reassignment-requests/:requestId/reject',
+  authenticate,
+  authorize('SUPER_ADMIN'),
+  [body('reason').optional().isString()],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const result = await rejectReassignmentRequest({
+        requestId: req.params.requestId,
+        actor: req.user,
+        reason: req.body.reason,
+        strict: true
+      });
+
+      res.json({ request: result.request });
+    } catch (error) {
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('Reject reassignment request error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
 // Get single ticket
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -356,9 +572,15 @@ router.patch('/:id/status', authenticate, [
       return res.status(404).json({ error: 'Ticket not found' });
     }
 
+    const { status } = req.body;
+
     // Check permissions
     if (req.user.role === 'USER' && ticket.createdById !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (req.user.role === 'USER' && status !== 'CLOSED') {
+      return res.status(403).json({ error: 'Users can only close their own tickets' });
     }
 
     // Technician can only update tickets assigned to them
@@ -378,7 +600,6 @@ router.patch('/:id/status', authenticate, [
     }
 
     const oldStatus = ticket.status;
-    const { status } = req.body;
 
     const updateData = { status };
 

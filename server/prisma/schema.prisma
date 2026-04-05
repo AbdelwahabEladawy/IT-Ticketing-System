@@ -41,6 +41,13 @@ enum TicketMessageType {
     RESOLVED_COMMENT
 }
 
+enum TicketReassignmentRequestStatus {
+    PENDING
+    APPROVED
+    REJECTED
+    AUTO_APPROVED
+}
+
 enum SuggestionStatus {
     UNSEEN
     SEEN
@@ -90,6 +97,10 @@ model User {
     assignedTickets Ticket[]   @relation("AssignedTo")
     ticketMessagesAuthored TicketMessage[] @relation("TicketMessageAuthor")
     ticketMessagesReceived TicketMessage[] @relation("TicketMessageRecipient")
+    reassignmentRequestsCreated TicketReassignmentRequest[] @relation("TicketReassignmentRequestedBy")
+    reassignmentRequestsFrom TicketReassignmentRequest[] @relation("TicketReassignmentFromEngineer")
+    reassignmentRequestsTo TicketReassignmentRequest[] @relation("TicketReassignmentToEngineer")
+    reassignmentRequestsDecided TicketReassignmentRequest[] @relation("TicketReassignmentDecidedBy")
     auditLogs       AuditLog[]
     suggestions     Suggestion[]
     notifications   Notification[]
@@ -146,6 +157,7 @@ model Ticket {
 
     auditLogs AuditLog[]
     messages  TicketMessage[]
+    reassignmentRequests TicketReassignmentRequest[]
     scheduledTaskRuns ScheduledTaskRun[]
 
     @@index([createdById])
@@ -153,6 +165,41 @@ model Ticket {
     @@index([status])
     @@index([specializationId])
     @@index([problemType])
+}
+
+model TicketReassignmentRequest {
+    id            String                          @id @default(cuid())
+    ticketId      String
+    ticket        Ticket                          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+    requestedById String
+    requestedBy   User                            @relation("TicketReassignmentRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+    fromEngineerId String?
+    fromEngineer   User?                          @relation("TicketReassignmentFromEngineer", fields: [fromEngineerId], references: [id], onDelete: SetNull)
+
+    toEngineerId  String
+    toEngineer    User                            @relation("TicketReassignmentToEngineer", fields: [toEngineerId], references: [id], onDelete: Cascade)
+
+    status        TicketReassignmentRequestStatus @default(PENDING)
+    reason        String?
+    rejectionReason String?
+
+    autoApproveAt DateTime
+    decidedAt     DateTime?
+    autoApprovedAt DateTime?
+    processedAt   DateTime?
+
+    decidedById   String?
+    decidedBy     User?                           @relation("TicketReassignmentDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+    createdAt     DateTime                        @default(now())
+    updatedAt     DateTime                        @updatedAt
+
+    @@index([ticketId, createdAt])
+    @@index([requestedById, createdAt])
+    @@index([status, autoApproveAt])
+    @@index([toEngineerId, createdAt])
 }
 
 model AuditLog {

@@ -19,6 +19,7 @@ import schedulingRoutes from './features/scheduling/scheduling.routes.js';
 import llmRoutes from './routes/llm.js';
 import { warmupOllamaModel } from './services/ollamaService.js';
 import { startSchedulingWorker } from './features/scheduling/scheduling.worker.js';
+import { startReassignmentRequestWorker } from './services/reassignmentRequestWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +59,7 @@ setInterval(async () => {
   }
 }, Number(process.env.PRESENCE_SWEEPER_MS || 15000));
 startSchedulingWorker();
+startReassignmentRequestWorker();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);

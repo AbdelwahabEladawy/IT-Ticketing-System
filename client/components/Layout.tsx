@@ -359,13 +359,28 @@ export default function Layout({ children }: LayoutProps) {
                           className={`block px-4 py-2 text-sm ${
                             router.pathname === "/tickets" ||
                             (router.pathname.startsWith("/tickets/") &&
-                              router.pathname !== "/tickets/create")
+                              router.pathname !== "/tickets/create" &&
+                              router.pathname !==
+                                "/tickets/reassignment-requests")
                               ? "bg-indigo-50 font-medium text-indigo-700"
                               : "text-gray-700 hover:bg-gray-50"
                           }`}
                           onClick={() => setOpenSuperAdminMenu(null)}
                         >
                           {t("layout.tickets")}
+                        </Link>
+                        <Link
+                          href="/tickets/reassignment-requests"
+                          className={`block px-4 py-2 text-sm ${
+                            router.pathname === "/tickets/reassignment-requests"
+                              ? "bg-indigo-50 font-medium text-indigo-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                          onClick={() => setOpenSuperAdminMenu(null)}
+                        >
+                          {t("layout.reassignmentRequests", {
+                            defaultValue: "Reassignment Requests",
+                          })}
                         </Link>
                         <Link
                           href="/scheduling-tickets"

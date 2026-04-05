@@ -19,7 +19,7 @@ export default function Users() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkSpecializationId, setBulkSpecializationId] = useState("");
   const [bulkSpecializations, setBulkSpecializations] = useState<any[]>([]);
-  const [bulkRole, setBulkRole] = useState<"TECHNICIAN" | "USER">("TECHNICIAN");
+  const [bulkRole, setBulkRole] = useState<"TECHNICIAN" | "USER">("USER");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkResult, setBulkResult] = useState<{
@@ -104,7 +104,7 @@ export default function Users() {
         name: editName.trim(),
         email: editEmail.trim(),
       };
-      if (editRole) {
+      if (editRole && currentUser?.role === "SUPER_ADMIN") {
         payload.role = editRole;
       }
       if (editSpecializationId) {
@@ -174,7 +174,14 @@ export default function Users() {
     if (currentUser.role === "IT_MANAGER" || currentUser.role === "IT_ADMIN" || currentUser.role === "SUPER_ADMIN") {
       loadSpecializations().catch(() => {});
     }
+    if (currentUser.role !== "SUPER_ADMIN") {
+      setBulkRole("USER");
+      setBulkSpecializationId("");
+    }
   }, [currentUser]);
+
+  const canCreateElevatedUsers = currentUser?.role === "SUPER_ADMIN";
+  const canCreateUsers = Boolean(currentUser && currentUser.role !== "IT_ADMIN");
 
   const filteredUsers = users.filter((user) => {
     const query = searchQuery.trim().toLowerCase();
@@ -188,6 +195,10 @@ export default function Users() {
   const openBulkModal = async () => {
     setBulkError(null);
     setBulkResult(null);
+    if (!canCreateElevatedUsers) {
+      setBulkRole("USER");
+      setBulkSpecializationId("");
+    }
     setBulkOpen(true);
 
     if (bulkSpecializations.length === 0) {
@@ -203,13 +214,14 @@ export default function Users() {
     e.preventDefault();
     setBulkError(null);
     setBulkResult(null);
+    const effectiveBulkRole = canCreateElevatedUsers ? bulkRole : "USER";
 
     if (!bulkFile) {
       setBulkError(t("users.chooseExcel"));
       return;
     }
 
-    if (bulkRole === "TECHNICIAN" && !bulkSpecializationId) {
+    if (effectiveBulkRole === "TECHNICIAN" && !bulkSpecializationId) {
       setBulkError(t("users.bulkSpecRequired"));
       return;
     }
@@ -219,9 +231,9 @@ export default function Users() {
 
       const formData = new FormData();
       formData.append("file", bulkFile);
-      formData.append("role", bulkRole);
+      formData.append("role", effectiveBulkRole);
 
-      if (bulkRole === "TECHNICIAN") {
+      if (effectiveBulkRole === "TECHNICIAN") {
         formData.append("specializationId", bulkSpecializationId);
       }
 
@@ -274,13 +286,15 @@ export default function Users() {
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:w-80"
             />
 
-            {currentUser?.role !== "IT_ADMIN" && (
+            {canCreateUsers && (
               <div className="flex gap-3 flex-wrap">
                 <button
                   onClick={() => router.push("/users/create")}
                   className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
                 >
-                  {t("users.addEngineer")}
+                  {canCreateElevatedUsers
+                    ? t("users.addEngineer")
+                    : t("users.createUser")}
                 </button>
 
                 <button
@@ -410,12 +424,14 @@ export default function Users() {
                     setBulkRole(e.target.value as any)
                   }
                 >
-                  <option value="TECHNICIAN">
-                    {t("users.engineerWithSpec")}
-                  </option>
                   <option value="USER">
                     {t("users.normalUser")}
                   </option>
+                  {canCreateElevatedUsers && (
+                    <option value="TECHNICIAN">
+                      {t("users.engineerWithSpec")}
+                    </option>
+                  )}
                 </select>
 
                 {bulkRole === "TECHNICIAN" && (
@@ -489,15 +505,20 @@ export default function Users() {
                   <select
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value)}
+                    disabled={currentUser?.role !== "SUPER_ADMIN"}
                     className="mt-2 block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   >
                     <option value="USER">USER</option>
-                    <option value="TECHNICIAN">TECHNICIAN</option>
-                    <option value="IT_ADMIN">IT_ADMIN</option>
-                    <option value="IT_MANAGER">IT_MANAGER</option>
-                    <option value="SOFTWARE_ENGINEER">SOFTWARE_ENGINEER</option>
-                    {currentUser?.role === "SUPER_ADMIN" && (
-                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                    {currentUser?.role === "SUPER_ADMIN" ? (
+                      <>
+                        <option value="TECHNICIAN">TECHNICIAN</option>
+                        <option value="IT_ADMIN">IT_ADMIN</option>
+                        <option value="IT_MANAGER">IT_MANAGER</option>
+                        <option value="SOFTWARE_ENGINEER">SOFTWARE_ENGINEER</option>
+                        <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                      </>
+                    ) : (
+                      editRole !== "USER" && <option value={editRole}>{editRole}</option>
                     )}
                   </select>
                 </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import Layout from "../components/Layout";
 import api from "../utils/api";
@@ -23,15 +24,35 @@ interface Ticket {
   specialization?: { name: string };
 }
 
+type DashboardFilter = "ALL" | "OPEN" | "RESOLVED" | "CLOSED" | "PENDING";
+const DASHBOARD_FILTER_STORAGE_KEY = "dashboard_active_filter";
+const ENGINEER_ROLES = new Set(["TECHNICIAN", "IT_ADMIN"]);
+const DASHBOARD_PAGE_SIZE = 10;
+
+const isDashboardFilter = (value: string): value is DashboardFilter =>
+  ["ALL", "OPEN", "RESOLVED", "CLOSED", "PENDING"].includes(value);
+
+const getDefaultFilterForRole = (role: string | null): DashboardFilter => {
+  if (role === "USER" || ENGINEER_ROLES.has(role || "")) {
+    return "OPEN";
+  }
+  return "ALL";
+};
+
+const getDashboardFilterStorageKey = (userId: string | null) =>
+  userId
+    ? `${DASHBOARD_FILTER_STORAGE_KEY}_${userId}`
+    : DASHBOARD_FILTER_STORAGE_KEY;
+
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<
-    "ALL" | "OPEN" | "RESOLVED" | "CLOSED" | "PENDING"
-  >("ALL");
+  const [activeFilter, setActiveFilter] = useState<DashboardFilter>("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
   const reloadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -44,12 +65,43 @@ export default function Dashboard() {
       const role = currentUser?.role ?? null;
       setSessionUserId(currentUser?.id ?? null);
       setUserRole(role);
-      if (role === "USER") {
-        setActiveFilter("OPEN");
-      }
     };
     loadRole();
   }, []);
+
+  useEffect(() => {
+    if (userRole === null) return;
+
+    const defaultFilter = getDefaultFilterForRole(userRole);
+    const storageKey = getDashboardFilterStorageKey(sessionUserId);
+    if (typeof window === "undefined") {
+      setActiveFilter(defaultFilter);
+      return;
+    }
+
+    const storedFilter = window.sessionStorage.getItem(storageKey);
+    if (storedFilter && isDashboardFilter(storedFilter)) {
+      if (storedFilter === "PENDING" && userRole !== "SUPER_ADMIN") {
+        setActiveFilter(defaultFilter);
+        return;
+      }
+      setActiveFilter(storedFilter);
+      return;
+    }
+
+    setActiveFilter(defaultFilter);
+  }, [userRole, sessionUserId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || userRole === null) return;
+    if (activeFilter === "PENDING" && userRole !== "SUPER_ADMIN") return;
+    const storageKey = getDashboardFilterStorageKey(sessionUserId);
+    window.sessionStorage.setItem(storageKey, activeFilter);
+  }, [activeFilter, userRole, sessionUserId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter]);
 
   const loadDashboard = async (opts?: { silent?: boolean }) => {
     try {
@@ -176,11 +228,7 @@ export default function Dashboard() {
           labelKey: "dashboard.closed",
           value: dashboard.stats.closed ?? 0,
         };
-        // USER: Open ? Resolved ? Closed ? All (total) last
-        if (userRole === "USER") {
-          return [openCard, resolvedCard, closedCard, allCard];
-        }
-        return [allCard, openCard, resolvedCard, closedCard];
+        return [openCard, resolvedCard, closedCard, allCard];
       })()
     : [];
 
@@ -203,6 +251,29 @@ export default function Dashboard() {
       return ticket.status === activeFilter;
     },
   );
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredTickets.length / DASHBOARD_PAGE_SIZE),
+  );
+  const pageStart = (currentPage - 1) * DASHBOARD_PAGE_SIZE;
+  const paginatedTickets = filteredTickets.slice(
+    pageStart,
+    pageStart + DASHBOARD_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const canOpenTicketFromDashboard =
+    userRole === "USER" || ENGINEER_ROLES.has(userRole || "");
+
+  const openTicketDetails = (ticketId: string) => {
+    if (!canOpenTicketFromDashboard) return;
+    void router.push(`/tickets/${ticketId}`);
+  };
 
   if (loading) {
     return (
@@ -291,10 +362,26 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTickets.map((ticket: Ticket) => (
+                {paginatedTickets.map((ticket: Ticket) => (
                   <tr
                     key={ticket.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    onClick={() => openTicketDetails(ticket.id)}
+                    onKeyDown={(e) => {
+                      if (
+                        canOpenTicketFromDashboard &&
+                        (e.key === "Enter" || e.key === " ")
+                      ) {
+                        e.preventDefault();
+                        openTicketDetails(ticket.id);
+                      }
+                    }}
+                    role={canOpenTicketFromDashboard ? "button" : undefined}
+                    tabIndex={canOpenTicketFromDashboard ? 0 : undefined}
+                    className={`transition-colors ${
+                      canOpenTicketFromDashboard
+                        ? "hover:bg-gray-50 cursor-pointer"
+                        : "hover:bg-gray-50"
+                    }`}
                   >
                     <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
                       <div className="text-sm font-medium text-gray-900 break-words">
@@ -352,6 +439,39 @@ export default function Dashboard() {
                       ? t("dashboard.noTicketsGeneric")
                       : activeFilter,
                 })}
+              </div>
+            )}
+            {filteredTickets.length > 0 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <p className="text-sm text-gray-600">
+                  {t("common.pageIndicator", {
+                    defaultValue: "Page {{current}} of {{total}}",
+                    current: currentPage,
+                    total: totalPages,
+                  })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(1, prev - 1))
+                    }
+                    disabled={currentPage <= 1}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {t("common.previous", { defaultValue: "Previous" })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    disabled={currentPage >= totalPages}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {t("common.next", { defaultValue: "Next" })}
+                  </button>
+                </div>
               </div>
             )}
           </div>

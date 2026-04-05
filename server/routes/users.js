@@ -9,6 +9,13 @@ import * as XLSX from 'xlsx';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const ELEVATED_ROLES = new Set([
+  'TECHNICIAN',
+  'IT_ADMIN',
+  'IT_MANAGER',
+  'SUPER_ADMIN',
+  'SOFTWARE_ENGINEER'
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -97,7 +104,7 @@ router.get('/technicians', authenticate, async (req, res) => {
   }
 });
 
-// Create user (Engineer roles except IT_ADMIN)
+// Create user
 router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK', 'TECHNICIAN', 'SOFTWARE_ENGINEER'), [
   body('email').isEmail().withMessage('البريد الإلكتروني غير صحيح'),
   body('password').isLength({ min: 6 }).withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
@@ -118,6 +125,10 @@ router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK
     const { email, password, name, role, specializationId } = req.body;
 
     console.log('Creating user:', { email, name, role, specializationId });
+
+    if (req.user.role !== 'SUPER_ADMIN' && ELEVATED_ROLES.has(role)) {
+      return res.status(403).json({ error: 'Only SUPER_ADMIN can create users with elevated roles' });
+    }
 
     // Validate specialization for technician and IT_ADMIN
     if ((role === 'TECHNICIAN' || role === 'IT_ADMIN') && !specializationId) {
@@ -298,6 +309,9 @@ router.patch('/:id', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_
       if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
         return res.status(403).json({ error: 'Cannot assign SUPER_ADMIN role' });
       }
+      if (role !== targetUser.role && req.user.role !== 'SUPER_ADMIN' && ELEVATED_ROLES.has(role)) {
+        return res.status(403).json({ error: 'Only SUPER_ADMIN can assign elevated roles' });
+      }
       updateData.role = role;
     }
 
@@ -393,6 +407,10 @@ router.post(
 
       const { specializationId, role } = req.body;
       const normalizedRole = role === 'USER' ? 'USER' : 'TECHNICIAN';
+
+      if (req.user.role !== 'SUPER_ADMIN' && normalizedRole !== 'USER') {
+        return res.status(403).json({ error: 'Only SUPER_ADMIN can create users with elevated roles' });
+      }
 
       let specialization = null;
       if (normalizedRole === 'TECHNICIAN') {

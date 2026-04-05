@@ -9,6 +9,7 @@
     "suggestionsInbox": "صندوق الاقتراحات",
     "users": "المهندسون",
     "specializations": "التخصصات",
+    "reassignmentRequests": "طلبات إعادة التعيين",
     "notifications": "الإشعارات",
     "markAllRead": "تعليم الكل كمقروء",
     "noNotifications": "لا توجد إشعارات",
@@ -234,6 +235,9 @@
   },
   "common": {
     "loading": "جاري التحميل...",
-    "error": "حدث خطأ"
+    "error": "حدث خطأ",
+    "previous": "السابق",
+    "next": "التالي",
+    "pageIndicator": "الصفحة {{current}} من {{total}}"
   }
 }
