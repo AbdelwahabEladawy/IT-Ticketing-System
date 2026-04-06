@@ -182,6 +182,12 @@ export default function Layout({ children }: LayoutProps) {
         ],
       },
       {
+        href: "/reports",
+        labelKey: "layout.reports",
+        defaultLabel: "Reports",
+        roles: ["IT_ADMIN", "SUPER_ADMIN"],
+      },
+      {
         href: "/tickets",
         labelKey: "layout.tickets",
         defaultLabel: "Tickets",
@@ -240,6 +246,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const superAdminTicketsGroupActive =
     router.pathname === "/dashboard" ||
+    router.pathname === "/reports" ||
     router.pathname === "/tickets/create" ||
     router.pathname === "/tickets" ||
     router.pathname.startsWith("/tickets/") ||
@@ -342,6 +349,17 @@ export default function Layout({ children }: LayoutProps) {
                           onClick={() => setOpenSuperAdminMenu(null)}
                         >
                           {t("layout.dashboard")}
+                        </Link>
+                        <Link
+                          href="/reports"
+                          className={`block px-4 py-2 text-sm ${
+                            router.pathname === "/reports"
+                              ? "bg-indigo-50 font-medium text-indigo-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                          onClick={() => setOpenSuperAdminMenu(null)}
+                        >
+                          {t("layout.reports", { defaultValue: "Reports" })}
                         </Link>
                         <Link
                           href="/tickets/create"
@@ -476,6 +494,7 @@ export default function Layout({ children }: LayoutProps) {
                     .sort((a, b) => {
                       const order = [
                         "/dashboard",
+                        "/reports",
                         "/tickets",
                         "/tickets/create",
                         "/scheduling-tickets",

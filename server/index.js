@@ -13,6 +13,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import notificationRoutes from './routes/notifications.js';
 import suggestionRoutes from './routes/suggestions.js';
 import presenceRoutes from './routes/presence.js';
+import reportsRoutes from './routes/reports.js';
 import { setupPresenceWebSocket } from './services/wsPresence.js';
 import { runPresenceSweeper } from './services/presenceService.js';
 import schedulingRoutes from './features/scheduling/scheduling.routes.js';
@@ -43,6 +44,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/reports', reportsRoutes);
 app.use('/api/llm', llmRoutes);
 app.use('/api/scheduling-tickets', schedulingRoutes);
 
