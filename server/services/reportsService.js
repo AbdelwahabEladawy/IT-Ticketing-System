@@ -134,6 +134,21 @@ export const parseReportFilters = (query = {}) => {
   };
 };
 
+export const parseAchievementExportFilters = (query = {}) => {
+  const dateFrom = query.dateFrom ? startOfDay(parseDateInput(query.dateFrom, 'dateFrom')) : null;
+  const dateTo = query.dateTo ? endOfDay(parseDateInput(query.dateTo, 'dateTo')) : null;
+
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    fail(400, 'dateFrom cannot be after dateTo');
+  }
+
+  return {
+    userId: normalizeId(query.userId),
+    dateFrom,
+    dateTo
+  };
+};
+
 const buildTicketWhere = (filters) => {
   const where = {};
 
@@ -346,6 +361,61 @@ export const getSummaryReport = async (filters) => {
     openTickets: totalTickets - closedTickets,
     closedTickets
   };
+};
+
+export const getAchievementExportRows = async (filters) => {
+  if (filters.userId) {
+    const selectedUser = await prisma.user.findUnique({
+      where: { id: filters.userId },
+      select: { id: true }
+    });
+
+    if (!selectedUser) {
+      fail(404, 'User not found');
+    }
+  }
+
+  const where = {};
+
+  if (filters.userId) {
+    where.userId = filters.userId;
+  }
+
+  if (filters.dateFrom || filters.dateTo) {
+    where.createdAt = {};
+    if (filters.dateFrom) {
+      where.createdAt.gte = filters.dateFrom;
+    }
+    if (filters.dateTo) {
+      where.createdAt.lte = filters.dateTo;
+    }
+  }
+
+  const achievements = await prisma.achievement.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { title: 'asc' }],
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      createdAt: true,
+      user: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+
+  return achievements.map((achievement) => ({
+    id: achievement.id,
+    userId: achievement.user.id,
+    userName: achievement.user.name,
+    title: achievement.title,
+    description: achievement.description,
+    createdAt: achievement.createdAt
+  }));
 };
 
 export const normalizeExportType = (value) => {

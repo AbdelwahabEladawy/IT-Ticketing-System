@@ -182,6 +182,12 @@ export default function Layout({ children }: LayoutProps) {
         ],
       },
       {
+        href: "/achievements",
+        labelKey: "layout.achievements",
+        defaultLabel: "Achievements",
+        roles: ["TECHNICIAN", "IT_ADMIN", "SUPER_ADMIN"],
+      },
+      {
         href: "/reports",
         labelKey: "layout.reports",
         defaultLabel: "Reports",
@@ -255,7 +261,8 @@ export default function Layout({ children }: LayoutProps) {
   const superAdminManagementGroupActive =
     router.pathname === "/users" ||
     router.pathname.startsWith("/suggestions") ||
-    router.pathname === "/specializations";
+    router.pathname === "/specializations" ||
+    router.pathname === "/achievements";
 
   if (!user) return <>{children}</>;
 
@@ -474,6 +481,19 @@ export default function Layout({ children }: LayoutProps) {
                           )}
                         </Link>
                         <Link
+                          href="/achievements"
+                          className={`block px-4 py-2 text-sm ${
+                            router.pathname === "/achievements"
+                              ? "bg-indigo-50 font-medium text-indigo-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                          onClick={() => setOpenSuperAdminMenu(null)}
+                        >
+                          {t("layout.achievements", {
+                            defaultValue: "Achievements",
+                          })}
+                        </Link>
+                        <Link
                           href="/specializations"
                           className={`block px-4 py-2 text-sm ${
                             router.pathname === "/specializations"
@@ -494,6 +514,7 @@ export default function Layout({ children }: LayoutProps) {
                     .sort((a, b) => {
                       const order = [
                         "/dashboard",
+                        "/achievements",
                         "/reports",
                         "/tickets",
                         "/tickets/create",

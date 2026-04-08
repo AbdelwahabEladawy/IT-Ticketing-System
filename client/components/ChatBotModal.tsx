@@ -44,14 +44,14 @@ export default function ChatBotModal() {
 
   return (
     <>
-      <button
+      {/* <button
         type="button"
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-500/20 transition hover:bg-indigo-700"
       >
         <MessageCircle className="h-5 w-5" />
         Chat with Global AI
-      </button>
+      </button> */}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 sm:p-6">
