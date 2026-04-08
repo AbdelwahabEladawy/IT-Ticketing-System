@@ -2,6 +2,7 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth.js';
 import { getSLAStatus } from '../utils/sla.js';
+import { buildEngineerQueueWhere, isEngineerRole } from '../services/teamQueueService.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -38,43 +39,11 @@ router.get('/', authenticate, async (req, res) => {
           closed: tickets.filter(t => t.status === 'CLOSED').length
         }
       };
-    } else if (user.role === 'TECHNICIAN') {
-      // Technician dashboard: assigned tickets
+    } else if (isEngineerRole(user.role)) {
+      // Engineer dashboard: all tickets visible to the user's specialization queue
+      const engineerWhere = buildEngineerQueueWhere(user);
       const tickets = await prisma.ticket.findMany({
-        where: { assignedToId: user.id },
-        include: {
-          createdBy: { select: { id: true, name: true, email: true } },
-          specialization: true
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      dashboardData = {
-        tickets: tickets.map(ticket => ({
-          ...ticket,
-          slaStatus: getSLAStatus(ticket.slaDeadline)
-        })),
-        stats: {
-          total: tickets.length,
-          open: tickets.filter(t => t.status === 'OPEN').length,
-          assigned: tickets.filter(t => t.status === 'ASSIGNED').length,
-          inProgress: tickets.filter(t => t.status === 'IN_PROGRESS').length,
-          resolved: tickets.filter(t => t.status === 'RESOLVED').length,
-          closed: tickets.filter(t => t.status === 'CLOSED').length,
-          overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length
-        }
-      };
-    } else if (user.role === 'IT_ADMIN') {
-      // IT Admin dashboard: only tickets assigned to IT Admin team
-      // Find IT Admin specialization
-      const itAdminSpec = await prisma.specialization.findUnique({
-        where: { name: 'IT Admin' }
-      });
-
-      const tickets = await prisma.ticket.findMany({
-        where: {
-          specializationId: itAdminSpec ? itAdminSpec.id : null
-        },
+        where: engineerWhere || { id: '__never__' },
         include: {
           createdBy: { select: { id: true, name: true, email: true } },
           assignedTo: {
@@ -85,6 +54,9 @@ router.get('/', authenticate, async (req, res) => {
         orderBy: { createdAt: 'desc' }
       });
 
+      const myTickets = tickets.filter((ticket) => ticket.assignedToId === user.id);
+      const waitingQueue = tickets.filter((ticket) => ticket.status === 'OPEN' && !ticket.assignedToId);
+
       dashboardData = {
         tickets: tickets.map(ticket => ({
           ...ticket,
@@ -97,7 +69,10 @@ router.get('/', authenticate, async (req, res) => {
           inProgress: tickets.filter(t => t.status === 'IN_PROGRESS').length,
           resolved: tickets.filter(t => t.status === 'RESOLVED').length,
           closed: tickets.filter(t => t.status === 'CLOSED').length,
-          overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length
+          overdue: tickets.filter(t => getSLAStatus(t.slaDeadline) === 'OVERDUE').length,
+          myActive: myTickets.filter(t => ['ASSIGNED', 'IN_PROGRESS', 'USER_ACTION_NEEDED'].includes(t.status)).length,
+          myTotal: myTickets.length,
+          waitingQueue: waitingQueue.length
         }
       };
     } else if (user.role === 'SUPER_ADMIN' || user.role === 'IT_MANAGER') {

@@ -23,9 +23,9 @@ interface Ticket {
   problemType: string;
   slaDeadline: string;
   slaStatus: string;
-  assignedTo?: { id: string; name: string };
+  assignedTo?: { id: string; name: string } | null;
   createdBy?: { id: string; name: string };
-  specialization?: { name: string };
+  specialization?: { id?: string; name: string };
 }
 
 interface TicketMessage {
@@ -46,6 +46,7 @@ type ReassignmentRequestStatus =
   | "APPROVED"
   | "REJECTED"
   | "AUTO_APPROVED";
+const ENGINEER_ROLES = new Set(["TECHNICIAN", "IT_ADMIN"]);
 
 interface ReassignmentRequest {
   id: string;
@@ -100,6 +101,8 @@ export default function TicketDetail() {
   >(null);
   const [decisionReason, setDecisionReason] = useState("");
   const [nowTs, setNowTs] = useState(Date.now());
+  const [claimingNext, setClaimingNext] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   const ticketReloadTimerRef = useRef<number | null>(null);
 
@@ -116,6 +119,11 @@ export default function TicketDetail() {
       loadReassignmentRequests();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!ticket?.specialization?.id) return;
+    void loadTechnicians(ticket.specialization.id);
+  }, [ticket?.specialization?.id]);
 
   const scheduleTicketDetailReload = () => {
     if (typeof window === "undefined" || !ticketId) return;
@@ -227,9 +235,11 @@ export default function TicketDetail() {
     setUser(currentUser);
   };
 
-  const loadTechnicians = async () => {
+  const loadTechnicians = async (specializationId?: string) => {
     try {
-      const response = await api.get("/users/technicians");
+      const response = await api.get("/users/technicians", {
+        params: specializationId ? { specializationId } : undefined,
+      });
       setTechnicians(response.data.technicians || []);
     } catch (error) {
       console.error("Failed to load engineers:", error);
@@ -287,12 +297,48 @@ export default function TicketDetail() {
 
     setStatusLoading(newStatus);
     try {
-      await api.patch(`/tickets/${ticketId}/status`, { status: newStatus });
+      const response = await api.patch(`/tickets/${ticketId}/status`, {
+        status: newStatus,
+      });
+      const nextTicketId = response.data?.nextTicket?.id;
+      if (nextTicketId) {
+        void router.push(`/tickets/${nextTicketId}`);
+        return;
+      }
       await loadTicket();
     } catch (error) {
       console.error("Failed to update status");
     } finally {
       setStatusLoading(null);
+    }
+  };
+
+  const handleTakeNextTicket = async () => {
+    try {
+      setClaimingNext(true);
+      setClaimError(null);
+      const response = await api.post("/tickets/claim-next");
+      const nextTicketId = response.data?.ticket?.id;
+      if (!nextTicketId) {
+        setClaimError(
+          response.data?.message ||
+            t("ticketDetail.noQueueTickets", {
+              defaultValue:
+                "No waiting tickets are available in your team queue.",
+            }),
+        );
+        return;
+      }
+      void router.push(`/tickets/${nextTicketId}`);
+    } catch (error: any) {
+      setClaimError(
+        error?.response?.data?.error ||
+          t("ticketDetail.claimNextFailed", {
+            defaultValue: "Failed to claim the next ticket.",
+          }),
+      );
+    } finally {
+      setClaimingNext(false);
     }
   };
 
@@ -522,9 +568,13 @@ export default function TicketDetail() {
     );
   }
 
-  const canUpdateStatus =
-    (user?.role === "TECHNICIAN" && ticket.assignedTo?.id === user.id) ||
-    (user?.role === "IT_ADMIN" && ticket.specialization?.name === "IT Admin");
+  const isEngineerViewer =
+    ENGINEER_ROLES.has(user?.role || "") &&
+    Boolean(user?.specialization?.id) &&
+    Boolean(ticket.specialization?.id) &&
+    user?.specialization?.id === ticket.specialization?.id;
+  const isAssignedEngineer = isEngineerViewer && ticket.assignedTo?.id === user.id;
+  const canUpdateStatus = isAssignedEngineer;
   const canCloseOwnTicket =
     user?.role === "USER" &&
     ticket.createdBy?.id === user.id &&
@@ -532,12 +582,9 @@ export default function TicketDetail() {
   const canAssign = user?.role === "SUPER_ADMIN" && ticket.problemType === "CUSTOM";
   const canReassign = user?.role === "SUPER_ADMIN";
   const canViewReassignmentRequests =
-    user?.role === "SUPER_ADMIN" ||
-    user?.role === "TECHNICIAN" ||
-    user?.role === "IT_ADMIN";
-  const canCreateReassignmentRequest =
-    (user?.role === "TECHNICIAN" && ticket.assignedTo?.id === user.id) ||
-    (user?.role === "IT_ADMIN" && ticket.specialization?.name === "IT Admin");
+    user?.role === "SUPER_ADMIN" || isEngineerViewer;
+  const canCreateReassignmentRequest = isAssignedEngineer;
+  const canTakeNextTicket = isEngineerViewer;
   const selectableReassignmentTargets = technicians.filter(
     (tech) => tech.id !== ticket.assignedTo?.id,
   );
@@ -553,8 +600,38 @@ export default function TicketDetail() {
           >
             {t("ticketDetail.back")}
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">{ticket.title}</h1>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">{ticket.title}</h1>
+            {canTakeNextTicket && (
+              <button
+                type="button"
+                onClick={handleTakeNextTicket}
+                disabled={claimingNext}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {claimingNext
+                  ? t("ticketDetail.claimingNext", {
+                      defaultValue: "Claiming...",
+                    })
+                  : t("ticketDetail.takeNextTicket", {
+                      defaultValue: "Take next ticket",
+                    })}
+              </button>
+            )}
+          </div>
+          {claimError && (
+            <p className="mt-3 text-sm text-rose-700">{claimError}</p>
+          )}
         </div>
+
+        {isEngineerViewer && !isAssignedEngineer && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {t("ticketDetail.teamQueueNotice", {
+              defaultValue:
+                "This ticket is visible because it belongs to your team queue. Only the assigned engineer can update it.",
+            })}
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200 text-start">
           <div>

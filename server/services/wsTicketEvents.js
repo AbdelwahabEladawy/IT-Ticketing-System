@@ -2,9 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { broadcastToUser } from './wsTicketMessages.js';
 
 const prisma = new PrismaClient();
-
-const IT_ADMIN_SPECIALIZATION_NAME = 'IT Admin';
 const DASHBOARD_EVENT_TYPE = 'ticket_list_updated';
+const ENGINEER_ROLES = ['TECHNICIAN', 'IT_ADMIN'];
 
 const broadcastToMany = (userIds, payload) => {
   for (const userId of userIds) {
@@ -34,27 +33,23 @@ export const broadcastTicketListUpdated = async ({ ticketId, event, ticket, oldT
     push(oldTicket.createdById);
   }
 
-  // SUPER_ADMIN and IT_MANAGER see all tickets.
-  const [globalAdmins, itAdminSpec] = await Promise.all([
-    prisma.user.findMany({
-      where: { role: { in: ['SUPER_ADMIN', 'IT_MANAGER'] } },
-      select: { id: true }
-    }),
-    prisma.specialization.findUnique({
-      where: { name: IT_ADMIN_SPECIALIZATION_NAME },
-      select: { id: true }
-    })
-  ]);
+  const globalAdmins = await prisma.user.findMany({
+    where: { role: { in: ['SUPER_ADMIN', 'IT_MANAGER'] } },
+    select: { id: true }
+  });
 
   for (const u of globalAdmins) push(u.id);
 
-  // IT_ADMIN sees only tickets assigned to IT Admin team (specializationId).
-  if (itAdminSpec && ticket?.specializationId && ticket.specializationId === itAdminSpec.id) {
-    const itAdmins = await prisma.user.findMany({
-      where: { role: 'IT_ADMIN', specializationId: itAdminSpec.id },
+  const specializationIds = [...new Set([ticket?.specializationId, oldTicket?.specializationId])].filter(Boolean);
+  if (specializationIds.length > 0) {
+    const teamMembers = await prisma.user.findMany({
+      where: {
+        role: { in: ENGINEER_ROLES },
+        specializationId: { in: specializationIds }
+      },
       select: { id: true }
     });
-    for (const u of itAdmins) push(u.id);
+    for (const u of teamMembers) push(u.id);
   }
 
   broadcastToMany(recipients, {

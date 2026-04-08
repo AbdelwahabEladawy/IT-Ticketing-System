@@ -19,12 +19,13 @@ interface Ticket {
   status: string;
   anydeskNumber: string;
   createdAt: string;
-  assignedTo?: { name: string } | null;
+  assignedTo?: { id: string; name: string } | null;
   createdBy?: { name: string; email?: string } | null;
-  specialization?: { name: string };
+  specialization?: { id?: string; name: string };
 }
 
 type DashboardFilter = "ALL" | "OPEN" | "RESOLVED" | "CLOSED" | "PENDING";
+type EngineerQueueView = "TEAM" | "MINE" | "WAITING";
 const DASHBOARD_FILTER_STORAGE_KEY = "dashboard_active_filter";
 const ENGINEER_ROLES = new Set(["TECHNICIAN", "IT_ADMIN"]);
 const DASHBOARD_PAGE_SIZE = 10;
@@ -52,7 +53,11 @@ export default function Dashboard() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("ALL");
+  const [queueView, setQueueView] = useState<EngineerQueueView>("TEAM");
   const [currentPage, setCurrentPage] = useState(1);
+  const [claimingNext, setClaimingNext] = useState(false);
+  const [claimMessage, setClaimMessage] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -101,7 +106,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeFilter]);
+  }, [activeFilter, queueView]);
 
   const loadDashboard = async (opts?: { silent?: boolean }) => {
     try {
@@ -118,6 +123,40 @@ export default function Dashboard() {
 
   const loadDashboardRef = useRef(loadDashboard);
   loadDashboardRef.current = loadDashboard;
+  const isEngineerDashboard = ENGINEER_ROLES.has(userRole || "");
+
+  const handleTakeNextTicket = async () => {
+    try {
+      setClaimingNext(true);
+      setClaimError(null);
+      setClaimMessage(null);
+      const response = await api.post("/tickets/claim-next");
+      const nextTicket = response.data?.ticket || null;
+      const message =
+        response.data?.message ||
+        t("dashboard.noQueueTickets", {
+          defaultValue: "No waiting tickets are available in your team queue.",
+        });
+
+      await loadDashboard({ silent: true });
+
+      if (nextTicket?.id) {
+        void router.push(`/tickets/${nextTicket.id}`);
+        return;
+      }
+
+      setClaimMessage(message);
+    } catch (error: any) {
+      setClaimError(
+        error?.response?.data?.error ||
+          t("dashboard.claimNextFailed", {
+            defaultValue: "Failed to claim the next ticket.",
+          }),
+      );
+    } finally {
+      setClaimingNext(false);
+    }
+  };
 
   const scheduleDashboardReload = () => {
     if (typeof window === "undefined") return;
@@ -232,25 +271,52 @@ export default function Dashboard() {
       })()
     : [];
 
-  const filteredTickets = (dashboard?.tickets || []).filter(
-    (ticket: Ticket) => {
+  const filteredTickets = (dashboard?.tickets || [])
+    .filter((ticket: Ticket) => {
+      if (isEngineerDashboard) {
+        if (queueView === "MINE") {
+          return ticket.assignedTo?.id === sessionUserId;
+        }
+        if (queueView === "WAITING") {
+          return ticket.status === "OPEN" && !ticket.assignedTo;
+        }
+      }
+      return true;
+    })
+    .filter((ticket: Ticket) => {
       if (activeFilter === "ALL") return true;
       if (activeFilter === "PENDING") {
-        // "pending" should include only:
-        // - assigned: status = ASSIGNED
-        // - unassigned: status = OPEN AND no technician assigned yet (assignedTo is null)
         return (
           ticket.status === "ASSIGNED" ||
           (ticket.status === "OPEN" && !ticket.assignedTo)
         );
       }
-      // "Open" = active work: OPEN + IN_PROGRESS (not only literal OPEN)
       if (activeFilter === "OPEN") {
         return ticket.status === "OPEN" || ticket.status === "IN_PROGRESS";
       }
       return ticket.status === activeFilter;
-    },
-  );
+    })
+    .sort((a: Ticket, b: Ticket) => {
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+
+      if (!isEngineerDashboard) {
+        return bTime - aTime;
+      }
+
+      if (queueView === "WAITING") {
+        return aTime - bTime;
+      }
+
+      const rank = (ticket: Ticket) => {
+        if (ticket.assignedTo?.id === sessionUserId) return 0;
+        if (ticket.status === "OPEN" && !ticket.assignedTo) return 1;
+        return 2;
+      };
+
+      const diff = rank(a) - rank(b);
+      return diff !== 0 ? diff : bTime - aTime;
+    });
   const totalPages = Math.max(
     1,
     Math.ceil(filteredTickets.length / DASHBOARD_PAGE_SIZE),
@@ -328,6 +394,85 @@ export default function Dashboard() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {isEngineerDashboard && (
+          <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {t("dashboard.teamQueueTitle", {
+                    defaultValue: "Team Queue",
+                  })}
+                </h2>
+                <p className="text-sm text-gray-600">
+                  {t("dashboard.teamQueueSummary", {
+                    defaultValue:
+                      "{{waiting}} waiting, {{mine}} active with you",
+                    waiting: dashboard?.stats?.waitingQueue ?? 0,
+                    mine: dashboard?.stats?.myActive ?? 0,
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleTakeNextTicket}
+                disabled={claimingNext}
+                className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {claimingNext
+                  ? t("dashboard.claimingNext", {
+                      defaultValue: "Claiming...",
+                    })
+                  : t("dashboard.takeNextTicket", {
+                      defaultValue: "Take next ticket",
+                    })}
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                {
+                  key: "TEAM" as const,
+                  label: t("dashboard.teamQueueView", {
+                    defaultValue: "Team Queue",
+                  }),
+                },
+                {
+                  key: "MINE" as const,
+                  label: t("dashboard.myTicketsView", {
+                    defaultValue: "My Tickets",
+                  }),
+                },
+                {
+                  key: "WAITING" as const,
+                  label: t("dashboard.waitingQueueView", {
+                    defaultValue: "Waiting Queue",
+                  }),
+                },
+              ].map((view) => (
+                <button
+                  key={view.key}
+                  type="button"
+                  onClick={() => setQueueView(view.key)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    queueView === view.key
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+
+            {claimMessage && (
+              <p className="mt-3 text-sm text-emerald-700">{claimMessage}</p>
+            )}
+            {claimError && (
+              <p className="mt-3 text-sm text-rose-700">{claimError}</p>
+            )}
           </div>
         )}
 

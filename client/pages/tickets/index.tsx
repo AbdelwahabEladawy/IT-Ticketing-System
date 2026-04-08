@@ -15,10 +15,13 @@ interface Ticket {
   anydeskNumber: string;
   slaDeadline: string;
   slaStatus: string;
-  assignedTo?: { name: string };
+  createdAt: string;
+  assignedTo?: { id: string; name: string } | null;
   createdBy?: { name: string; email?: string };
-  specialization?: { name: string };
+  specialization?: { id?: string; name: string };
 }
+type EngineerQueueView = 'TEAM' | 'MINE' | 'WAITING';
+const ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN']);
 const TICKETS_PAGE_SIZE = 10;
 
 export default function Tickets() {
@@ -29,6 +32,11 @@ export default function Tickets() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [queueView, setQueueView] = useState<EngineerQueueView>('TEAM');
+  const [claimingNext, setClaimingNext] = useState(false);
+  const [claimMessage, setClaimMessage] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -39,7 +47,10 @@ export default function Tickets() {
     let cancelled = false;
     (async () => {
       const u = await getCurrentUser();
-      if (!cancelled) setSessionUserId(u?.id ?? null);
+      if (!cancelled) {
+        setSessionUserId(u?.id ?? null);
+        setUserRole(u?.role ?? null);
+      }
     })();
     return () => {
       cancelled = true;
@@ -63,6 +74,40 @@ export default function Tickets() {
 
   const loadTicketsRef = useRef(loadTickets);
   loadTicketsRef.current = loadTickets;
+  const isEngineerTicketsView = ENGINEER_ROLES.has(userRole || '');
+
+  const handleTakeNextTicket = async () => {
+    try {
+      setClaimingNext(true);
+      setClaimError(null);
+      setClaimMessage(null);
+      const response = await api.post('/tickets/claim-next');
+      const nextTicket = response.data?.ticket || null;
+      const message =
+        response.data?.message ||
+        t('tickets.noQueueTickets', {
+          defaultValue: 'No waiting tickets are available in your team queue.'
+        });
+
+      await loadTickets({ silent: true });
+
+      if (nextTicket?.id) {
+        void router.push(`/tickets/${nextTicket.id}`);
+        return;
+      }
+
+      setClaimMessage(message);
+    } catch (err: any) {
+      setClaimError(
+        err?.response?.data?.error ||
+          t('tickets.claimNextFailed', {
+            defaultValue: 'Failed to claim the next ticket.'
+          })
+      );
+    } finally {
+      setClaimingNext(false);
+    }
+  };
 
   const scheduleTicketsReload = () => {
     if (typeof window === 'undefined') return;
@@ -124,6 +169,10 @@ export default function Tickets() {
     };
   }, [sessionUserId]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [queueView]);
+
   const formatTicketStatusLabel = (status: string) => formatStatus(status, t);
 
   const getStatusColor = (status: string) => {
@@ -143,9 +192,42 @@ export default function Tickets() {
     return value.length > maxLength ? `${value.substring(0, maxLength)}...` : value;
   };
 
-  const totalPages = Math.max(1, Math.ceil(tickets.length / TICKETS_PAGE_SIZE));
+  const filteredTickets = tickets
+    .filter((ticket) => {
+      if (isEngineerTicketsView) {
+        if (queueView === 'MINE') {
+          return ticket.assignedTo?.id === sessionUserId;
+        }
+        if (queueView === 'WAITING') {
+          return ticket.status === 'OPEN' && !ticket.assignedTo;
+        }
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+
+      if (!isEngineerTicketsView) {
+        return bTime - aTime;
+      }
+
+      if (queueView === 'WAITING') {
+        return aTime - bTime;
+      }
+
+      const rank = (ticket: Ticket) => {
+        if (ticket.assignedTo?.id === sessionUserId) return 0;
+        if (ticket.status === 'OPEN' && !ticket.assignedTo) return 1;
+        return 2;
+      };
+
+      const diff = rank(a) - rank(b);
+      return diff !== 0 ? diff : bTime - aTime;
+    });
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / TICKETS_PAGE_SIZE));
   const pageStart = (currentPage - 1) * TICKETS_PAGE_SIZE;
-  const paginatedTickets = tickets.slice(pageStart, pageStart + TICKETS_PAGE_SIZE);
+  const paginatedTickets = filteredTickets.slice(pageStart, pageStart + TICKETS_PAGE_SIZE);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -171,13 +253,72 @@ export default function Tickets() {
         )}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900">{t('tickets.title')}</h1>
-          <button
-            onClick={() => router.push('/tickets/create')}
-            className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl"
-          >
-            {t('tickets.createTicket')}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {isEngineerTicketsView && (
+              <button
+                type="button"
+                onClick={handleTakeNextTicket}
+                disabled={claimingNext}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {claimingNext
+                  ? t('tickets.claimingNext', { defaultValue: 'Claiming...' })
+                  : t('tickets.takeNextTicket', {
+                      defaultValue: 'Take next ticket'
+                    })}
+              </button>
+            )}
+            <button
+              onClick={() => router.push('/tickets/create')}
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 rounded-lg hover:from-indigo-700 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl"
+            >
+              {t('tickets.createTicket')}
+            </button>
+          </div>
         </div>
+
+        {isEngineerTicketsView && (
+          <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap gap-2">
+              {[
+                {
+                  key: 'TEAM' as const,
+                  label: t('tickets.teamQueueView', {
+                    defaultValue: 'Team Queue'
+                  })
+                },
+                {
+                  key: 'MINE' as const,
+                  label: t('tickets.myTicketsView', {
+                    defaultValue: 'My Tickets'
+                  })
+                },
+                {
+                  key: 'WAITING' as const,
+                  label: t('tickets.waitingQueueView', {
+                    defaultValue: 'Waiting Queue'
+                  })
+                }
+              ].map((view) => (
+                <button
+                  key={view.key}
+                  type="button"
+                  onClick={() => setQueueView(view.key)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    queueView === view.key
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+
+            {claimMessage && <p className="mt-3 text-sm text-emerald-700">{claimMessage}</p>}
+            {claimError && <p className="mt-3 text-sm text-rose-700">{claimError}</p>}
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
           <div className="overflow-x-auto overscroll-x-contain">
@@ -235,10 +376,10 @@ export default function Tickets() {
                 ))}
               </tbody>
             </table>
-            {tickets.length === 0 && (
+            {filteredTickets.length === 0 && (
               <div className="text-center py-12 text-gray-500">{t('tickets.none')}</div>
             )}
-            {tickets.length > 0 && (
+            {filteredTickets.length > 0 && (
               <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
                 <p className="text-sm text-gray-600">
                   {t('common.pageIndicator', {
