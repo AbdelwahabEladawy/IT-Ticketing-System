@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'react-i18next';
+import { format } from 'date-fns';
+import { ar } from 'date-fns/locale';
 import Layout from '../components/Layout';
 import api from '../utils/api';
 import { getCurrentUser } from '../utils/auth';
@@ -33,7 +35,22 @@ interface EngineerOption {
   name: string;
 }
 
+interface AchievementUserOption {
+  id: string;
+  name: string;
+}
+
+interface AchievementRow {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  userId: string;
+  userName: string;
+}
+
 const ALLOWED_ROLES = new Set(['SUPER_ADMIN', 'IT_ADMIN']);
+const ACHIEVEMENT_USER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN', 'SUPER_ADMIN']);
 
 const parseNumber = (value: unknown) => {
   const parsed = Number(value);
@@ -41,11 +58,12 @@ const parseNumber = (value: unknown) => {
 };
 
 export default function ReportsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
 
   const [roleChecked, setRoleChecked] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
   const [reportType, setReportType] = useState<ReportType>('department');
   const [departmentId, setDepartmentId] = useState('');
@@ -57,6 +75,7 @@ export default function ReportsPage() {
 
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [engineers, setEngineers] = useState<EngineerOption[]>([]);
+  const [achievementUsers, setAchievementUsers] = useState<AchievementUserOption[]>([]);
 
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [summary, setSummary] = useState<SummaryState>({
@@ -67,7 +86,17 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [filtersLoading, setFiltersLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [achievementExportLoading, setAchievementExportLoading] = useState(false);
+  const [achievementViewLoading, setAchievementViewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [achievementExportError, setAchievementExportError] = useState<string | null>(null);
+  const [achievementViewError, setAchievementViewError] = useState<string | null>(null);
+  const [achievementModalOpen, setAchievementModalOpen] = useState(false);
+  const [achievementRows, setAchievementRows] = useState<AchievementRow[]>([]);
+
+  const [achievementUserId, setAchievementUserId] = useState('');
+  const [achievementDateFrom, setAchievementDateFrom] = useState('');
+  const [achievementDateTo, setAchievementDateTo] = useState('');
 
   const buildQueryParams = () => {
     const params: Record<string, string> = {
@@ -96,6 +125,76 @@ export default function ReportsPage() {
     return params;
   };
 
+  const buildAchievementExportParams = () => {
+    const params: Record<string, string> = {};
+
+    if (achievementUserId) {
+      params.userId = achievementUserId;
+    }
+
+    if (achievementDateFrom) {
+      params.dateFrom = achievementDateFrom;
+    }
+
+    if (achievementDateTo) {
+      params.dateTo = achievementDateTo;
+    }
+
+    return params;
+  };
+
+  const downloadBlobResponse = (response: any, fallbackFileName: string) => {
+    const contentType =
+      response.headers['content-type'] ||
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const blob = new Blob([response.data], { type: contentType });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    const dispositionHeader = response.headers['content-disposition'] as string | undefined;
+    const fileNameMatch = dispositionHeader?.match(/filename="?([^"]+)"?/i);
+    const fileName = fileNameMatch?.[1] || fallbackFileName;
+
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  };
+
+  const getBlobErrorMessage = async (err: any, fallbackMessage: string) => {
+    const responseData = err?.response?.data;
+
+    if (responseData instanceof Blob) {
+      try {
+        const text = await responseData.text();
+        const parsed = JSON.parse(text);
+        if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+          return parsed.error;
+        }
+      } catch {
+        return fallbackMessage;
+      }
+    }
+
+    return err?.response?.data?.error || fallbackMessage;
+  };
+
+  const getAchievementDateRangeError = () => {
+    if (
+      achievementDateFrom &&
+      achievementDateTo &&
+      achievementDateFrom > achievementDateTo
+    ) {
+      return t('reports.achievementDateRangeInvalid', {
+        defaultValue: 'Start date cannot be after end date.'
+      });
+    }
+
+    return null;
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -105,6 +204,7 @@ export default function ReportsPage() {
         if (cancelled) return;
 
         const canAccess = Boolean(currentUser?.role && ALLOWED_ROLES.has(currentUser.role));
+        setCurrentUserRole(currentUser?.role ?? null);
         setRoleChecked(true);
 
         if (!canAccess) {
@@ -115,9 +215,10 @@ export default function ReportsPage() {
 
         setHasAccess(true);
 
-        const [departmentsResponse, engineersResponse] = await Promise.all([
+        const [departmentsResponse, engineersResponse, usersResponse] = await Promise.all([
           api.get('/specializations'),
-          api.get('/users/technicians')
+          api.get('/users/technicians'),
+          api.get('/users')
         ]);
         if (cancelled) return;
 
@@ -127,6 +228,7 @@ export default function ReportsPage() {
         const engineerRows = Array.isArray(engineersResponse.data?.technicians)
           ? engineersResponse.data.technicians
           : [];
+        const userRows = Array.isArray(usersResponse.data?.users) ? usersResponse.data.users : [];
 
         setDepartments(
           departmentRows.map((item: any) => ({
@@ -139,6 +241,17 @@ export default function ReportsPage() {
             id: item.id,
             name: item.name
           }))
+        );
+        setAchievementUsers(
+          userRows
+            .filter((item: any) => ACHIEVEMENT_USER_ROLES.has(item.role))
+            .map((item: any) => ({
+              id: item.id,
+              name: item.name
+            }))
+            .sort((a: AchievementUserOption, b: AchievementUserOption) =>
+              a.name.localeCompare(b.name)
+            )
         );
       } catch (err: any) {
         if (cancelled) return;
@@ -248,30 +361,89 @@ export default function ReportsPage() {
         responseType: 'blob'
       });
 
-      const contentType =
-        response.headers['content-type'] ||
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      const blob = new Blob([response.data], { type: contentType });
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-
-      const dispositionHeader = response.headers['content-disposition'] as string | undefined;
-      const fileNameMatch = dispositionHeader?.match(/filename="?([^"]+)"?/i);
-      const fileName = fileNameMatch?.[1] || `report-${reportType}.xlsx`;
-
-      link.href = downloadUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      downloadBlobResponse(response, `report-${reportType}.xlsx`);
     } catch (err: any) {
       setError(
-        err?.response?.data?.error ||
+        await getBlobErrorMessage(
+          err,
           t('reports.exportFailed', { defaultValue: 'Failed to export report' })
+        )
       );
     } finally {
       setExportLoading(false);
+    }
+  };
+
+  const handleAchievementExport = async () => {
+    const dateRangeError = getAchievementDateRangeError();
+    if (dateRangeError) {
+      setAchievementExportError(dateRangeError);
+      return;
+    }
+
+    try {
+      setAchievementExportLoading(true);
+      setAchievementExportError(null);
+
+      const response = await api.get('/reports/achievements/export', {
+        params: buildAchievementExportParams(),
+        responseType: 'blob'
+      });
+
+      downloadBlobResponse(response, 'achievements-report.xlsx');
+    } catch (err: any) {
+      setAchievementExportError(
+        await getBlobErrorMessage(
+          err,
+          t('reports.achievementExportFailed', {
+            defaultValue: 'Failed to export achievements'
+          })
+        )
+      );
+    } finally {
+      setAchievementExportLoading(false);
+    }
+  };
+
+  const handleViewAchievements = async () => {
+    const dateRangeError = getAchievementDateRangeError();
+    if (!achievementUserId) {
+      setAchievementViewError(
+        t('reports.achievementUserRequired', {
+          defaultValue: 'Please select an engineer first.'
+        })
+      );
+      return;
+    }
+
+    if (dateRangeError) {
+      setAchievementViewError(dateRangeError);
+      return;
+    }
+
+    try {
+      setAchievementViewLoading(true);
+      setAchievementViewError(null);
+
+      const response = await api.get('/reports/achievements', {
+        params: buildAchievementExportParams()
+      });
+
+      const rows = Array.isArray(response.data?.achievements)
+        ? response.data.achievements
+        : [];
+
+      setAchievementRows(rows);
+      setAchievementModalOpen(true);
+    } catch (err: any) {
+      setAchievementViewError(
+        err?.response?.data?.error ||
+          t('reports.achievementViewFailed', {
+            defaultValue: 'Failed to load achievements'
+          })
+      );
+    } finally {
+      setAchievementViewLoading(false);
     }
   };
 
@@ -282,6 +454,13 @@ export default function ReportsPage() {
         : t('reports.byDepartment', { defaultValue: 'By Department' }),
     [reportType, t]
   );
+
+  const selectedAchievementUserName = useMemo(() => {
+    return (
+      achievementUsers.find((user) => user.id === achievementUserId)?.name ||
+      t('reports.selectedEngineer', { defaultValue: 'Selected engineer' })
+    );
+  }, [achievementUserId, achievementUsers, t]);
 
   if (!roleChecked || !hasAccess) {
     return (
@@ -474,6 +653,108 @@ export default function ReportsPage() {
           </div>
         </div>
 
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-lg">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {t('reports.achievementsExportTitle', {
+                  defaultValue: 'Achievements Export'
+                })}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                {t('reports.achievementsExportSubtitle', {
+                  defaultValue:
+                    'Download achievements for one user or all eligible users within an optional date range.'
+                })}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              {currentUserRole === 'SUPER_ADMIN' && (
+                <button
+                  type="button"
+                  onClick={handleViewAchievements}
+                  disabled={achievementViewLoading}
+                  className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-medium text-indigo-700 shadow-sm transition-all hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {achievementViewLoading
+                    ? t('reports.loadingAchievements', { defaultValue: 'Loading...' })
+                    : t('reports.viewAchievements', { defaultValue: 'View Achievements' })}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleAchievementExport}
+                disabled={achievementExportLoading}
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:from-emerald-700 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {achievementExportLoading
+                  ? t('reports.exporting', { defaultValue: 'Exporting...' })
+                  : t('reports.exportAchievements', { defaultValue: 'Export Achievements' })}
+              </button>
+            </div>
+          </div>
+
+          {achievementExportError && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {achievementExportError}
+            </div>
+          )}
+
+          {achievementViewError && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {achievementViewError}
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {t('reports.achievementUser', { defaultValue: 'User' })}
+              </label>
+              <select
+                value={achievementUserId}
+                onChange={(e) => setAchievementUserId(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value="">
+                  {t('reports.allAchievementUsers', {
+                    defaultValue: 'All eligible users'
+                  })}
+                </option>
+                {achievementUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {t('reports.achievementStartDate', { defaultValue: 'Start Date' })}
+              </label>
+              <input
+                type="date"
+                value={achievementDateFrom}
+                onChange={(e) => setAchievementDateFrom(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {t('reports.achievementEndDate', { defaultValue: 'End Date' })}
+              </label>
+              <input
+                type="date"
+                value={achievementDateTo}
+                onChange={(e) => setAchievementDateTo(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-lg">
             <p className="text-sm font-medium text-gray-600">
@@ -546,6 +827,67 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {achievementModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-6 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {t('reports.achievementModalTitle', {
+                      defaultValue: 'Achievements'
+                    })}
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {selectedAchievementUserName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAchievementModalOpen(false)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  {t('reports.close', { defaultValue: 'Close' })}
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto px-6 py-5">
+              {achievementRows.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+                  {t('reports.achievementEmpty', {
+                    defaultValue: 'No achievements were found for the selected engineer and date range.'
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {achievementRows.map((achievement) => (
+                    <div
+                      key={achievement.id}
+                      className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <h3 className="text-base font-semibold text-gray-900">
+                          {achievement.title}
+                        </h3>
+                        <span className="text-xs font-medium text-gray-400">
+                          {format(new Date(achievement.createdAt), 'MMM d, yyyy HH:mm', {
+                            locale: i18n.language?.startsWith('ar') ? ar : undefined
+                          })}
+                        </span>
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                        {achievement.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

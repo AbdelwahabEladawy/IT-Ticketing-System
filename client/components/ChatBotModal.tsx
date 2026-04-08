@@ -53,6 +53,7 @@ export default function ChatBotModal() {
         Chat with Global AI
       </button> */}
 
+
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 sm:p-6">
           <div className="w-full max-w-xl rounded-3xl border border-gray-200 bg-white shadow-2xl shadow-black/10">
