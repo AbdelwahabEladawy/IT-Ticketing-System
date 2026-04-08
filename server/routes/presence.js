@@ -24,8 +24,13 @@ router.post('/heartbeat', authenticate, [
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  await heartbeat(req.user.id, req.body.tabId || null);
-  res.json({ ok: true });
+  try {
+    await heartbeat(req.user.id, req.body.tabId || null);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Presence heartbeat error:', err?.message || err);
+    return res.status(503).json({ ok: false, error: 'Database unavailable' });
+  }
 });
 
 router.post('/disconnect', [
@@ -43,8 +48,13 @@ router.post('/disconnect', [
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  await markOffline(userId, req.body.tabId || null, 'TAB_CLOSED');
-  res.json({ ok: true });
+  try {
+    await markOffline(userId, req.body.tabId || null, 'TAB_CLOSED');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Presence disconnect error:', err?.message || err);
+    return res.status(503).json({ ok: false, error: 'Database unavailable' });
+  }
 });
 
 export default router;

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "db:generate": "prisma generate",
     "seed": "node prisma/seed.js",
     "check-users": "node scripts/check-users.js",
     "create-admin": "node scripts/create-admin.js",
