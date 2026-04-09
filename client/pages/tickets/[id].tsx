@@ -12,6 +12,7 @@ import {
 } from "../../utils/ticketMessages";
 import { formatTicketStatusLabel } from "../../utils/ticketStatusLabel";
 import { useClientMounted } from "../../hooks/useClientMounted";
+import { capitalizeFirstLetter } from "../../utils/text";
 
 interface Ticket {
   id: string;
@@ -19,6 +20,7 @@ interface Ticket {
   description: string;
   status: string;
   anydeskNumber: string;
+  deviceIp?: string | null;
   issueType?: string;
   problemType: string;
   slaDeadline: string;
@@ -553,7 +555,9 @@ export default function TicketDetail() {
           >
             {t("ticketDetail.back")}
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">{ticket.title}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {capitalizeFirstLetter(ticket.title)}
+          </h1>
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200 text-start">
@@ -587,6 +591,14 @@ export default function TicketDetail() {
               </h3>
               <p className="text-lg font-semibold text-indigo-600" dir="ltr">
                 {ticket.anydeskNumber || t("ticketDetail.na")}
+              </p>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                {t("ticketDetail.deviceIp")}
+              </h3>
+              <p className="text-lg font-semibold text-gray-900" dir="ltr">
+                {ticket.deviceIp || t("ticketDetail.na")}
               </p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">

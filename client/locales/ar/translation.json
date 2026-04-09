@@ -82,6 +82,7 @@
     "description": "الوصف",
     "status": "الحالة",
     "anydesk": "رقم Anydesk",
+    "deviceIp": "عنوان IP الداخلي",
     "problemType": "نوع المشكلة",
     "issueType": "نوع البلاغ",
     "specialization": "التخصص",

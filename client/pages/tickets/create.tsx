@@ -31,9 +31,6 @@ export default function CreateTicket() {
   const loadUser = async () => {
     const currentUser = await getCurrentUser();
     setUser(currentUser);
-    if (currentUser?.role === "IT_ADMIN") {
-      router.push("/dashboard");
-    }
   };
 
   const loadSpecializations = async () => {

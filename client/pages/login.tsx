@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'react-i18next';
 import api from '../utils/api';
-import { setToken } from '../utils/auth';
-import LanguageSwitcher from '../components/LanguageSwitcher';
+import {
+  getSavedLoginCredentials,
+  persistAuthSession,
+  saveLoginCredentials,
+} from '../utils/auth';
 import Image from 'next/image';
 import logoG from "../public/assets/logoG.png"
 import { Eye, EyeOff } from "lucide-react";
@@ -19,6 +22,14 @@ export default function Login() {
 
   const isRTL = i18n.language === 'ar';
 
+  useEffect(() => {
+    const savedCredentials = getSavedLoginCredentials();
+    if (!savedCredentials) return;
+
+    setEmail(savedCredentials.email);
+    setPassword(savedCredentials.password);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -26,7 +37,8 @@ export default function Login() {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      setToken(response.data.token);
+      persistAuthSession(response.data.token, response.data.user);
+      saveLoginCredentials({ email, password });
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || t('login.failed'));

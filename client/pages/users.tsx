@@ -7,8 +7,9 @@ import api from "../utils/api";
 import { getCurrentUser } from "../utils/auth";
 
 export default function Users() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
+  const usersLabel = i18n.language?.startsWith("ar") ? "المستخدمون" : "Users";
 
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -266,7 +267,7 @@ export default function Users() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              {t("layout.users")}
+              {usersLabel}
             </h1>
             <p className="mt-2 text-sm text-gray-500">
               {t("users.manageHelpDesk", {
