@@ -265,6 +265,39 @@ export default function Layout({ children }: LayoutProps) {
     router.pathname === "/specializations" ||
     router.pathname === "/achievements";
 
+  const getSuperAdminTicketsMenuLabel = () => {
+    if (router.pathname === "/reports") {
+      return t("layout.reports", { defaultValue: "Reports" });
+    }
+
+    if (router.pathname === "/tickets/create") {
+      return t("layout.createTicket", { defaultValue: "Create Ticket" });
+    }
+
+    if (router.pathname === "/tickets/reassignment-requests") {
+      return t("layout.reassignmentRequests", {
+        defaultValue: "Reassignment Requests",
+      });
+    }
+
+    if (router.pathname === "/scheduling-tickets") {
+      return t("layout.schedulingTickets", {
+        defaultValue: "Scheduling Tickets",
+      });
+    }
+
+    if (
+      router.pathname === "/tickets" ||
+      (router.pathname.startsWith("/tickets/") &&
+        router.pathname !== "/tickets/create" &&
+        router.pathname !== "/tickets/reassignment-requests")
+    ) {
+      return t("layout.tickets", { defaultValue: "Tickets" });
+    }
+
+    return t("layout.dashboard", { defaultValue: "Dashboard" });
+  };
+
   if (!user) return <>{children}</>;
 
   const handleChangePassword = async (e: any) => {
@@ -341,7 +374,7 @@ export default function Layout({ children }: LayoutProps) {
                       aria-expanded={openSuperAdminMenu === "tickets"}
                       aria-haspopup="true"
                     >
-                      {t("layout.navMenuTickets")}
+                      {getSuperAdminTicketsMenuLabel()}
                       <ChevronDown
                         className={`h-4 w-4 shrink-0 transition-transform ${
                           openSuperAdminMenu === "tickets" ? "rotate-180" : ""
