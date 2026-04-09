@@ -44,9 +44,9 @@ export const ISSUE_TYPES_BY_TEAM = {
     'Request Report and Management Docs',
     'Custom Problem',
   ],
-  'Software / Programming': [
-    'Software issues',
-  ],
+  // 'software': [
+  //   'Software issues',
+  // ],
 };
 
 /**
