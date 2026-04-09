@@ -16,6 +16,11 @@ const ELEVATED_ROLES = new Set([
   'SUPER_ADMIN',
   'SOFTWARE_ENGINEER'
 ]);
+const SPECIALIZED_ENGINEER_ROLES = new Set([
+  'TECHNICIAN',
+  'IT_ADMIN',
+  'SOFTWARE_ENGINEER'
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -51,14 +56,14 @@ router.get('/', authenticate, authorize('IT_MANAGER', 'IT_ADMIN', 'SUPER_ADMIN',
   }
 });
 
-// Get technicians (for assignment)
-// Includes both TECHNICIAN role and IT_ADMIN role (as they can also handle tickets)
+// Get engineers (for assignment)
+// Includes TECHNICIAN, IT_ADMIN, and SOFTWARE_ENGINEER roles.
 router.get('/technicians', authenticate, async (req, res) => {
   try {
     const { specializationId } = req.query;
 
     const where = {
-      role: { in: ['TECHNICIAN', 'IT_ADMIN'] } // Include both TECHNICIAN and IT_ADMIN
+      role: { in: Array.from(SPECIALIZED_ENGINEER_ROLES) }
     };
 
     if (specializationId) {
@@ -130,9 +135,9 @@ router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK
       return res.status(403).json({ error: 'Only SUPER_ADMIN can create users with elevated roles' });
     }
 
-    // Validate specialization for technician and IT_ADMIN
-    if ((role === 'TECHNICIAN' || role === 'IT_ADMIN') && !specializationId) {
-      return res.status(400).json({ error: 'Specialization is required for technicians and IT admins' });
+    // Validate specialization for engineer roles that work inside a team.
+    if (SPECIALIZED_ENGINEER_ROLES.has(role) && !specializationId) {
+      return res.status(400).json({ error: 'Specialization is required for technicians, IT admins, and software engineers' });
     }
 
     // Validate specialization exists if provided
@@ -164,8 +169,8 @@ router.post('/', authenticate, authorize('IT_MANAGER', 'SUPER_ADMIN', 'HELP_DESK
         password: hashedPassword,
         name: name.trim(),
         role,
-        specializationId: (role === 'TECHNICIAN' || role === 'IT_ADMIN') ? specializationId : null,
-        status: (role === 'TECHNICIAN' || role === 'IT_ADMIN') ? 'AVAILABLE' : null,
+        specializationId: SPECIALIZED_ENGINEER_ROLES.has(role) ? specializationId : null,
+        status: SPECIALIZED_ENGINEER_ROLES.has(role) ? 'AVAILABLE' : null,
         isOnline: false
       },
       include: {

@@ -5,7 +5,7 @@ import { broadcastTicketListUpdated } from './wsTicketEvents.js';
 
 const prisma = new PrismaClient();
 
-const ELIGIBLE_ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN']);
+const ELIGIBLE_ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN', 'SOFTWARE_ENGINEER']);
 const AUTO_APPROVAL_MINUTES = Number(process.env.REASSIGNMENT_AUTO_APPROVAL_MINUTES || 15);
 const ticketLocks = new Map();
 

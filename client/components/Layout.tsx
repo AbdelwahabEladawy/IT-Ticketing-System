@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
-import { getCurrentUser, removeToken, User } from "../utils/auth";
+import { clearAuthState, getCurrentUser, User } from "../utils/auth";
 import api from "../utils/api";
 import { stopPresence } from "../utils/presence";
 import SendSuggestionModal from "./SendSuggestionModal";
@@ -158,11 +158,12 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => {
     stopPresence();
-    removeToken();
+    clearAuthState({ clearSavedCredentials: true });
     router.push("/login");
   };
 
   const getRoleName = (role: string) => t(`roles.${role}`, { defaultValue: role });
+  const usersLabel = i18n.language?.startsWith("ar") ? "المستخدمون" : "Users";
 
   const getNavLinks = () => {
     if (!user) return [];
@@ -210,7 +211,7 @@ export default function Layout({ children }: LayoutProps) {
         href: "/tickets/create",
         labelKey: "layout.createTicket",
         defaultLabel: "Create Ticket",
-        roles: ["USER", "IT_MANAGER", "SUPER_ADMIN"],
+        roles: ["USER", "IT_ADMIN", "IT_MANAGER", "SUPER_ADMIN"],
       },
       {
         href: "/scheduling-tickets",
@@ -236,7 +237,7 @@ export default function Layout({ children }: LayoutProps) {
       links.push({
         href: "/users",
         labelKey: "layout.users",
-        defaultLabel: "Engineers",
+        defaultLabel: "Users",
         roles: ["IT_MANAGER", "HELP_DESK", "TECHNICIAN", "SOFTWARE_ENGINEER", "SUPER_ADMIN"],
       });
       links.push({
@@ -301,7 +302,11 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex justify-between items-center gap-3 min-h-16 py-2">
             <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
               <div className="flex-shrink-0 flex items-center">
-                <div className="flex items-center gap-3">
+                <Link
+                  href="/dashboard"
+                  className="flex items-center gap-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                  aria-label={t("layout.dashboard", { defaultValue: "Dashboard" })}
+                >
                   <img
                     src="/assets/logo.png"
                     alt="Global Energy Logo"
@@ -310,7 +315,7 @@ export default function Layout({ children }: LayoutProps) {
                   <h1 className="text-xl font-bold text-black/80 truncate">
                     {t("app.title")}
                   </h1>
-                </div>
+                </Link>
               </div>
               {user.role === "SUPER_ADMIN" ? (
                 <div
@@ -462,7 +467,7 @@ export default function Layout({ children }: LayoutProps) {
                           }`}
                           onClick={() => setOpenSuperAdminMenu(null)}
                         >
-                          {t("layout.users")}
+                          {usersLabel}
                         </Link>
                         <Link
                           href="/suggestions"
@@ -537,9 +542,11 @@ export default function Layout({ children }: LayoutProps) {
                             : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900"
                         }`}
                       >
-                        {t(link.labelKey, {
-                          defaultValue: link.defaultLabel || link.href,
-                        })}
+                        {link.href === "/users"
+                          ? usersLabel
+                          : t(link.labelKey, {
+                              defaultValue: link.defaultLabel || link.href,
+                            })}
                         {link.href === "/suggestions" &&
                           unseenSuggestions > 0 && (
                             <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">

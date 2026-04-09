@@ -5,6 +5,7 @@ import Layout from "../../components/Layout";
 import api from "../../utils/api";
 import { getCurrentUser } from "../../utils/auth";
 import { formatTicketStatusLabel } from "../../utils/ticketStatusLabel";
+import { capitalizeFirstLetter } from "../../utils/text";
 
 type ReassignmentRequestStatus =
   | "PENDING"
@@ -301,7 +302,9 @@ export default function ReassignmentRequestsPage() {
                         onClick={() => void router.push(`/tickets/${ticketId}`)}
                         className="text-lg font-semibold text-indigo-700 hover:text-indigo-900 transition-colors text-start"
                       >
-                        {request.ticket?.title || t("ticketDetail.notFound")}
+                        {request.ticket?.title
+                          ? capitalizeFirstLetter(request.ticket.title)
+                          : t("ticketDetail.notFound")}
                       </button>
                       <div className="text-xs text-gray-500 mt-1">
                         {t("reassignRequests.ticketStatus", {

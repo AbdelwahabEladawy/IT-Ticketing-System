@@ -82,6 +82,7 @@
     "description": "Description",
     "status": "Status",
     "anydesk": "Anydesk number",
+    "deviceIp": "Device IP",
     "problemType": "Problem type",
     "issueType": "Issue type",
     "specialization": "Specialization",

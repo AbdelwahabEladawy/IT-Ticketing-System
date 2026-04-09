@@ -6,6 +6,7 @@ import api from '../../utils/api';
 import { getCurrentUser } from '../../utils/auth';
 import { connectTicketMessages, disconnectTicketMessages } from '../../utils/ticketMessages';
 import { formatTicketStatusLabel as formatStatus } from '../../utils/ticketStatusLabel';
+import { capitalizeFirstLetter } from '../../utils/text';
 
 interface Ticket {
   id: string;
@@ -125,6 +126,9 @@ export default function Tickets() {
   }, [sessionUserId]);
 
   const formatTicketStatusLabel = (status: string) => formatStatus(status, t);
+  const openTicketDetails = (ticketId: string) => {
+    void router.push(`/tickets/${ticketId}`);
+  };
 
   const getStatusColor = (status: string) => {
     const colors: { [key: string]: string } = {
@@ -194,9 +198,21 @@ export default function Tickets() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {paginatedTickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={ticket.id}
+                    onClick={() => openTicketDetails(ticket.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openTicketDetails(ticket.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  >
                     <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
-                      <div className="text-sm font-medium text-gray-900 break-words">{ticket.title}</div>
+                      <div className="text-sm font-medium text-gray-900 break-words">{capitalizeFirstLetter(ticket.title)}</div>
                       <div className="text-sm text-gray-500 break-words line-clamp-2">{trimDescription(ticket.description)}</div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap align-top">
@@ -225,7 +241,10 @@ export default function Tickets() {
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm align-top">
                       <button
-                        onClick={() => router.push(`/tickets/${ticket.id}`)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openTicketDetails(ticket.id);
+                        }}
                         className="text-indigo-600 hover:text-indigo-800 font-medium"
                       >
                         {t('tickets.view')}

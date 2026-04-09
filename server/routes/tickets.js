@@ -10,6 +10,7 @@ import { notifyTicketStatusChange, notifyFromTemplate } from '../utils/notificat
 import { broadcastToUser } from '../services/wsTicketMessages.js';
 import { broadcastTicketListUpdated } from '../services/wsTicketEvents.js';
 import { createResolvedTicketComment } from '../services/ticketResolvedCommentService.js';
+import { getInternalRequestIp } from '../utils/requestIp.js';
 import {
   createReassignmentRequest,
   listReassignmentRequestsForTicket,
@@ -27,7 +28,8 @@ const SELF_ASSIGN_SPECIALIZATIONS = new Set([
   'Server/Admin',
   'Software Engineering'
 ]);
-const ELIGIBLE_ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN']);
+const DIRECT_ENGINEER_ROLES = new Set(['TECHNICIAN', 'SOFTWARE_ENGINEER']);
+const ELIGIBLE_ENGINEER_ROLES = new Set(['TECHNICIAN', 'IT_ADMIN', 'SOFTWARE_ENGINEER']);
 
 const getItAdminSpecializationId = async () => {
   const itAdminSpec = await prisma.specialization.findUnique({
@@ -41,7 +43,7 @@ const canAccessTicket = async (user, ticket) => {
   if (!user || !ticket) return false;
   if (user.role === 'SUPER_ADMIN' || user.role === 'IT_MANAGER') return true;
   if (user.role === 'USER') return ticket.createdById === user.id;
-  if (user.role === 'TECHNICIAN') return ticket.assignedToId === user.id;
+  if (DIRECT_ENGINEER_ROLES.has(user.role)) return ticket.assignedToId === user.id;
   if (user.role === 'IT_ADMIN') {
     const itAdminSpecializationId = await getItAdminSpecializationId();
     return Boolean(itAdminSpecializationId && ticket.specializationId === itAdminSpecializationId);
@@ -64,9 +66,24 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { title, description, anydeskNumber, problemType, issueType, specializationId, assignedToId: requestedAssignedToId } = req.body;
+    const {
+      title,
+      description,
+      anydeskNumber,
+      problemType,
+      issueType,
+      specializationId,
+      assignedToId: requestedAssignedToId
+    } = req.body;
+    const deviceIp = getInternalRequestIp(req);
 
-    console.log('Creating ticket with:', { title, issueType, problemType, specializationId });
+    console.log('Creating ticket with:', {
+      title,
+      issueType,
+      problemType,
+      specializationId,
+      deviceIp
+    });
 
     const slaHours = getSLAHours();
     const slaDeadline = calculateSLADeadline(new Date());
@@ -82,13 +99,18 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
     // 3. Otherwise → Use existing routing logic (backward compatibility)
 
     const userSpecializationName = req.user.specialization?.name;
-    const canCreateSelfAssignedTicket =
-      (req.user.role === 'TECHNICIAN' || req.user.role === 'IT_ADMIN') &&
+    const canEngineerCreateSelfAssignedTicket =
+      DIRECT_ENGINEER_ROLES.has(req.user.role) &&
       SELF_ASSIGN_SPECIALIZATIONS.has(userSpecializationName || '');
+    const canCreateSelfAssignedTicket =
+      req.user.role === 'IT_ADMIN' || canEngineerCreateSelfAssignedTicket;
 
     if (canCreateSelfAssignedTicket) {
+      const fallbackSpecializationId =
+        req.user.role === 'IT_ADMIN' ? await getItAdminSpecializationId() : null;
       assignedToId = req.user.id;
-      finalSpecializationId = req.user.specializationId || finalSpecializationId;
+      finalSpecializationId =
+        req.user.specializationId || fallbackSpecializationId || finalSpecializationId;
       status = 'ASSIGNED';
       assignedAt = new Date();
     } else if (issueType === 'CUSTOM') {
@@ -174,6 +196,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
         title,
         description,
         anydeskNumber: anydeskNumber || null,
+        deviceIp,
         problemType,
         issueType: issueType || null, // Store issue type for tracking
         status,
@@ -200,7 +223,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       `Ticket "${title}" created by ${req.user.name}`,
       req.user.id,
       ticket.id,
-      { anydeskNumber, problemType, issueType, status }
+      { anydeskNumber, problemType, issueType, status, deviceIp }
     );
 
     // Notify if assigned
@@ -275,8 +298,8 @@ router.get('/', authenticate, async (req, res) => {
         },
         orderBy: { createdAt: 'desc' }
       });
-    } else if (req.user.role === 'TECHNICIAN') {
-      // Technician sees assigned tickets
+    } else if (DIRECT_ENGINEER_ROLES.has(req.user.role)) {
+      // Engineer sees assigned tickets
       tickets = await prisma.ticket.findMany({
         where: { assignedToId: req.user.id },
         include: {
@@ -421,8 +444,8 @@ router.post(
         return res.status(400).json({ error: 'Ticket must have an assigned engineer first' });
       }
 
-      if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
-        return res.status(403).json({ error: 'Technician can request reassignment only for their assigned tickets' });
+      if (DIRECT_ENGINEER_ROLES.has(req.user.role) && ticket.assignedToId !== req.user.id) {
+        return res.status(403).json({ error: 'Engineer can request reassignment only for their assigned tickets' });
       }
 
       if (req.user.role === 'IT_ADMIN') {
@@ -527,7 +550,7 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+    if (DIRECT_ENGINEER_ROLES.has(req.user.role) && ticket.assignedToId !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -583,8 +606,8 @@ router.patch('/:id/status', authenticate, [
       return res.status(403).json({ error: 'Users can only close their own tickets' });
     }
 
-    // Technician can only update tickets assigned to them
-    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+    // Engineers can only update tickets assigned to them
+    if (DIRECT_ENGINEER_ROLES.has(req.user.role) && ticket.assignedToId !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -675,7 +698,7 @@ router.post('/:id/action-needed', authenticate, [
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+    if (DIRECT_ENGINEER_ROLES.has(req.user.role) && ticket.assignedToId !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -860,7 +883,7 @@ router.get('/:id/messages', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    if (req.user.role === 'TECHNICIAN' && ticket.assignedToId !== req.user.id) {
+    if (DIRECT_ENGINEER_ROLES.has(req.user.role) && ticket.assignedToId !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -1001,11 +1024,11 @@ router.post('/:id/assign', authenticate, authorize('SUPER_ADMIN'), [
         ticket.id
       );
     } else {
-      // Notify all IT_ADMIN in the specialization
+      // Notify all online-capable engineers in the specialization
       const teamMembers = await prisma.user.findMany({
         where: {
           specializationId: specializationId,
-          role: { in: ['TECHNICIAN', 'IT_ADMIN'] }
+          role: { in: Array.from(ELIGIBLE_ENGINEER_ROLES) }
         }
       });
       for (const member of teamMembers) {
@@ -1141,7 +1164,7 @@ router.post('/:id/reassign', authenticate, authorize('SUPER_ADMIN'), [
       where: { id: technicianId }
     });
 
-    if (!technician || (technician.role !== 'TECHNICIAN' && technician.role !== 'IT_ADMIN')) {
+    if (!technician || !ELIGIBLE_ENGINEER_ROLES.has(technician.role)) {
       return res.status(400).json({ error: 'Invalid technician' });
     }
 

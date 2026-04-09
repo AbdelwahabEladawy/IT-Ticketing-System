@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import api from '../utils/api';
-import { setToken } from '../utils/auth';
+import { persistAuthSession } from '../utils/auth';
 
 export default function Signup() {
   const router = useRouter();
@@ -32,7 +32,7 @@ export default function Signup() {
         email: formData.email,
         password: formData.password
       });
-      setToken(response.data.token);
+      persistAuthSession(response.data.token, response.data.user);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Signup failed');

@@ -11,6 +11,7 @@ import {
   disconnectTicketMessages,
 } from "../utils/ticketMessages";
 import { formatTicketStatusLabel as formatStatus } from "../utils/ticketStatusLabel";
+import { capitalizeFirstLetter } from "../utils/text";
 
 interface Ticket {
   id: string;
@@ -19,7 +20,7 @@ interface Ticket {
   status: string;
   anydeskNumber: string;
   createdAt: string;
-  assignedTo?: { name: string } | null;
+  assignedTo?: { id?: string; name: string } | null;
   createdBy?: { name: string; email?: string } | null;
   specialization?: { name: string };
 }
@@ -33,7 +34,11 @@ const isDashboardFilter = (value: string): value is DashboardFilter =>
   ["ALL", "OPEN", "RESOLVED", "CLOSED", "PENDING"].includes(value);
 
 const getDefaultFilterForRole = (role: string | null): DashboardFilter => {
-  if (role === "USER" || ENGINEER_ROLES.has(role || "")) {
+  if (
+    role === "USER" ||
+    role === "SUPER_ADMIN" ||
+    ENGINEER_ROLES.has(role || "")
+  ) {
     return "OPEN";
   }
   return "ALL";
@@ -54,6 +59,8 @@ export default function Dashboard() {
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const reloadTimerRef = useRef<number | null>(null);
+  const isEngineerRole = ENGINEER_ROLES.has(userRole || "");
+  const canUsePendingFilter = userRole === "SUPER_ADMIN" || isEngineerRole;
 
   useEffect(() => {
     loadDashboard();
@@ -73,6 +80,11 @@ export default function Dashboard() {
     if (userRole === null) return;
 
     const defaultFilter = getDefaultFilterForRole(userRole);
+    if (userRole === "SUPER_ADMIN") {
+      setActiveFilter(defaultFilter);
+      return;
+    }
+
     const storageKey = getDashboardFilterStorageKey(sessionUserId);
     if (typeof window === "undefined") {
       setActiveFilter(defaultFilter);
@@ -81,7 +93,7 @@ export default function Dashboard() {
 
     const storedFilter = window.sessionStorage.getItem(storageKey);
     if (storedFilter && isDashboardFilter(storedFilter)) {
-      if (storedFilter === "PENDING" && userRole !== "SUPER_ADMIN") {
+      if (storedFilter === "PENDING" && !canUsePendingFilter) {
         setActiveFilter(defaultFilter);
         return;
       }
@@ -90,14 +102,14 @@ export default function Dashboard() {
     }
 
     setActiveFilter(defaultFilter);
-  }, [userRole, sessionUserId]);
+  }, [canUsePendingFilter, sessionUserId, userRole]);
 
   useEffect(() => {
     if (typeof window === "undefined" || userRole === null) return;
-    if (activeFilter === "PENDING" && userRole !== "SUPER_ADMIN") return;
+    if (activeFilter === "PENDING" && !canUsePendingFilter) return;
     const storageKey = getDashboardFilterStorageKey(sessionUserId);
     window.sessionStorage.setItem(storageKey, activeFilter);
-  }, [activeFilter, userRole, sessionUserId]);
+  }, [activeFilter, canUsePendingFilter, sessionUserId, userRole]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -205,6 +217,23 @@ export default function Dashboard() {
       : value;
   };
 
+  const dashboardTickets = (dashboard?.tickets || []) as Ticket[];
+
+  const pendingTickets = dashboardTickets.filter((ticket: Ticket) => {
+    if (userRole === "SUPER_ADMIN") {
+      return (
+        ticket.status === "ASSIGNED" ||
+        (ticket.status === "OPEN" && !ticket.assignedTo)
+      );
+    }
+
+    if (!isEngineerRole || ticket.status !== "ASSIGNED") return false;
+
+    if (userRole === "TECHNICIAN") return true;
+
+    return Boolean(sessionUserId && ticket.assignedTo?.id === sessionUserId);
+  });
+
   const summaryCards = dashboard?.stats
     ? (() => {
         const allCard = {
@@ -228,21 +257,22 @@ export default function Dashboard() {
           labelKey: "dashboard.closed",
           value: dashboard.stats.closed ?? 0,
         };
-        return [openCard, resolvedCard, closedCard, allCard];
+        const pendingCard = {
+          key: "PENDING" as const,
+          labelKey: "dashboard.pending",
+          value: pendingTickets.length,
+        };
+        return canUsePendingFilter
+          ? [openCard, pendingCard, resolvedCard, closedCard, allCard]
+          : [openCard, resolvedCard, closedCard, allCard];
       })()
     : [];
 
-  const filteredTickets = (dashboard?.tickets || []).filter(
+  const filteredTickets = dashboardTickets.filter(
     (ticket: Ticket) => {
       if (activeFilter === "ALL") return true;
       if (activeFilter === "PENDING") {
-        // "pending" should include only:
-        // - assigned: status = ASSIGNED
-        // - unassigned: status = OPEN AND no technician assigned yet (assignedTo is null)
-        return (
-          ticket.status === "ASSIGNED" ||
-          (ticket.status === "OPEN" && !ticket.assignedTo)
-        );
+        return pendingTickets.some((pendingTicket) => pendingTicket.id === ticket.id);
       }
       // "Open" = active work: OPEN + IN_PROGRESS (not only literal OPEN)
       if (activeFilter === "OPEN") {
@@ -267,8 +297,7 @@ export default function Dashboard() {
     }
   }, [currentPage, totalPages]);
 
-  const canOpenTicketFromDashboard =
-    userRole === "USER" || ENGINEER_ROLES.has(userRole || "");
+  const canOpenTicketFromDashboard = Boolean(userRole);
 
   const openTicketDetails = (ticketId: string) => {
     if (!canOpenTicketFromDashboard) return;
@@ -293,23 +322,8 @@ export default function Dashboard() {
         </h1>
 
         {dashboard?.stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[
-              ...summaryCards,
-              ...(userRole === "SUPER_ADMIN"
-                ? [
-                    {
-                      key: "PENDING",
-                      labelKey: "dashboard.pending",
-                      value: (dashboard?.tickets || []).filter(
-                        (t: Ticket) =>
-                          t.status === "ASSIGNED" ||
-                          (t.status === "OPEN" && !t.assignedTo),
-                      ).length,
-                    },
-                  ]
-                : []),
-            ].map((card) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
+            {summaryCards.map((card) => (
               <button
                 key={card.key}
                 type="button"
@@ -385,7 +399,7 @@ export default function Dashboard() {
                   >
                     <td className="px-4 sm:px-6 py-4 max-w-xs sm:max-w-md align-top">
                       <div className="text-sm font-medium text-gray-900 break-words">
-                        {ticket.title}
+                        {capitalizeFirstLetter(ticket.title)}
                       </div>
                       <div className="text-sm text-gray-500 break-words line-clamp-2">
                         {trimDescription(ticket.description)}

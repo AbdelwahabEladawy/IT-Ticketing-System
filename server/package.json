@@ -7,6 +7,7 @@
     "start": "node index.js",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
+    "db:migrate:device-ip": "node scripts/add-ticket-device-ip-column.js",
     "seed": "node prisma/seed.js",
     "check-users": "node scripts/check-users.js",
     "create-admin": "node scripts/create-admin.js",

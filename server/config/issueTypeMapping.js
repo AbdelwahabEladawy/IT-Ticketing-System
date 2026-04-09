@@ -15,12 +15,16 @@ export const ISSUE_TYPE_MAPPING = {
 
   // IT Help Desk Issues
   'Hardware / Software': 'Help Desk',
+  'Hardware / licence': 'Help Desk',
 
   // IT Admin Issues
   'Request Laptop': 'IT Admin',
   'Request Accessories': 'IT Admin',
   'Request Report and Management Docs': 'IT Admin',
   'Custom Problem': 'IT Admin',
+
+  // Software Engineering Issues
+  'Software issues': 'Software Engineering',
 };
 
 /**
@@ -32,13 +36,16 @@ export const ISSUE_TYPES_BY_TEAM = {
     'Network / Internet Issue',
   ],
   'IT Help Desk': [
-    'Hardware / Software',
+    'Hardware / licence',
   ],
   'IT Admin': [
     'Request Laptop',
     'Request Accessories',
     'Request Report and Management Docs',
     'Custom Problem',
+  ],
+  'Software / Programming': [
+    'Software issues',
   ],
 };
 
@@ -53,6 +60,13 @@ export const getAllIssueTypes = () => {
  * Check if an issue type exists
  */
 export const isValidIssueType = (issueType) => {
-  return issueType === 'CUSTOM' || issueType === null || ISSUE_TYPE_MAPPING.hasOwnProperty(issueType);
+  const normalizedIssueType =
+    typeof issueType === 'string' ? issueType.trim() : issueType;
+
+  return (
+    normalizedIssueType === 'CUSTOM' ||
+    normalizedIssueType === null ||
+    ISSUE_TYPE_MAPPING.hasOwnProperty(normalizedIssueType)
+  );
 };
 
