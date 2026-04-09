@@ -98,13 +98,18 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
     // 3. Otherwise → Use existing routing logic (backward compatibility)
 
     const userSpecializationName = req.user.specialization?.name;
-    const canCreateSelfAssignedTicket =
-      (req.user.role === 'TECHNICIAN' || req.user.role === 'IT_ADMIN') &&
+    const canTechnicianCreateSelfAssignedTicket =
+      req.user.role === 'TECHNICIAN' &&
       SELF_ASSIGN_SPECIALIZATIONS.has(userSpecializationName || '');
+    const canCreateSelfAssignedTicket =
+      req.user.role === 'IT_ADMIN' || canTechnicianCreateSelfAssignedTicket;
 
     if (canCreateSelfAssignedTicket) {
+      const fallbackSpecializationId =
+        req.user.role === 'IT_ADMIN' ? await getItAdminSpecializationId() : null;
       assignedToId = req.user.id;
-      finalSpecializationId = req.user.specializationId || finalSpecializationId;
+      finalSpecializationId =
+        req.user.specializationId || fallbackSpecializationId || finalSpecializationId;
       status = 'ASSIGNED';
       assignedAt = new Date();
     } else if (issueType === 'CUSTOM') {
