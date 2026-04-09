@@ -10,6 +10,7 @@ import { notifyTicketStatusChange, notifyFromTemplate } from '../utils/notificat
 import { broadcastToUser } from '../services/wsTicketMessages.js';
 import { broadcastTicketListUpdated } from '../services/wsTicketEvents.js';
 import { createResolvedTicketComment } from '../services/ticketResolvedCommentService.js';
+import { getInternalRequestIp } from '../utils/requestIp.js';
 import {
   createReassignmentRequest,
   listReassignmentRequestsForTicket,
@@ -64,9 +65,24 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { title, description, anydeskNumber, problemType, issueType, specializationId, assignedToId: requestedAssignedToId } = req.body;
+    const {
+      title,
+      description,
+      anydeskNumber,
+      problemType,
+      issueType,
+      specializationId,
+      assignedToId: requestedAssignedToId
+    } = req.body;
+    const deviceIp = getInternalRequestIp(req);
 
-    console.log('Creating ticket with:', { title, issueType, problemType, specializationId });
+    console.log('Creating ticket with:', {
+      title,
+      issueType,
+      problemType,
+      specializationId,
+      deviceIp
+    });
 
     const slaHours = getSLAHours();
     const slaDeadline = calculateSLADeadline(new Date());
@@ -174,6 +190,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
         title,
         description,
         anydeskNumber: anydeskNumber || null,
+        deviceIp,
         problemType,
         issueType: issueType || null, // Store issue type for tracking
         status,
@@ -200,7 +217,7 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       `Ticket "${title}" created by ${req.user.name}`,
       req.user.id,
       ticket.id,
-      { anydeskNumber, problemType, issueType, status }
+      { anydeskNumber, problemType, issueType, status, deviceIp }
     );
 
     // Notify if assigned

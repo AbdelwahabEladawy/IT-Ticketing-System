@@ -144,6 +144,7 @@ model Ticket {
     issueType     String? // Optional: Predefined issue type for direct team routing
     status        TicketStatus @default(OPEN)
     anydeskNumber String? // Anydesk number for remote access
+    deviceIp      String? // Captured automatically from the request when available
 
     // SLA tracking
     slaHours    Int       @default(24) // Default 24 hours SLA
