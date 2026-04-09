@@ -8,13 +8,15 @@ const prisma = new PrismaClient();
  * - Help Desk (for IT_HELP_DESK issues)
  * - IT Admin (for IT_ADMIN issues)
  * - Network (for NETWORK_ENGINEER issues)
+ * - Software Engineering (for SOFTWARE / PROGRAMMING issues)
  */
 async function ensureSpecializations() {
   try {
     const requiredSpecializations = [
       { name: 'Help Desk', description: 'IT Help Desk support for access, software, licenses, and device issues' },
       { name: 'IT Admin', description: 'IT Administration for hardware requests, asset management, and employee setup' },
-      { name: 'Network', description: 'Network engineering for internet, WiFi, LAN, and router issues' }
+      { name: 'Network', description: 'Network engineering for internet, WiFi, LAN, and router issues' },
+      { name: 'Software Engineering', description: 'Software engineering support for application issues, bugs, and programming-related requests' }
     ];
 
     console.log('Ensuring required specializations exist...');

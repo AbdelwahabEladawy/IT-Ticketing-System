@@ -20,17 +20,21 @@ const prisma = new PrismaClient();
  */
 export const routeByIssueType = async (issueType, existingSpecializationId = null) => {
   try {
+    const normalizedIssueType =
+      typeof issueType === 'string' ? issueType.trim() : issueType;
+
     // If no issue type or CUSTOM, return null to use existing routing logic
     // This ensures backward compatibility and preserves existing behavior
-    if (!issueType || issueType === 'CUSTOM') {
+    if (!normalizedIssueType || normalizedIssueType === 'CUSTOM') {
       return null;
     }
 
     // Check if issue type exists in mapping
-    const specializationName = ISSUE_TYPE_MAPPING[issueType];
+    const specializationName =
+      ISSUE_TYPE_MAPPING[issueType] || ISSUE_TYPE_MAPPING[normalizedIssueType];
     if (!specializationName) {
       // Invalid issue type, fall back to existing logic
-      console.warn(`Issue type "${issueType}" not found in mapping. Falling back to existing routing.`);
+      console.warn(`Issue type "${normalizedIssueType}" not found in mapping. Falling back to existing routing.`);
       return null;
     }
 
@@ -41,11 +45,11 @@ export const routeByIssueType = async (issueType, existingSpecializationId = nul
 
     if (!specialization) {
       // Specialization not found, log warning and fall back to existing logic
-      console.warn(`Specialization "${specializationName}" not found for issue type "${issueType}". Falling back to existing routing.`);
+      console.warn(`Specialization "${specializationName}" not found for issue type "${normalizedIssueType}". Falling back to existing routing.`);
       return null;
     }
 
-    console.log(`Routing issue type "${issueType}" to specialization "${specializationName}" (ID: ${specialization.id})`);
+    console.log(`Routing issue type "${normalizedIssueType}" to specialization "${specializationName}" (ID: ${specialization.id})`);
 
     // Route directly to the mapped specialization using existing round-robin logic
     // This reuses the existing assignment mechanism without modification

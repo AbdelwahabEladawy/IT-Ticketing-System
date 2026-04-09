@@ -5,6 +5,7 @@ import { getSLAStatus } from '../utils/sla.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const ENGINEER_ROLES = ['TECHNICIAN', 'SOFTWARE_ENGINEER'];
 
 // Get dashboard data based on role
 router.get('/', authenticate, async (req, res) => {
@@ -38,8 +39,8 @@ router.get('/', authenticate, async (req, res) => {
           closed: tickets.filter(t => t.status === 'CLOSED').length
         }
       };
-    } else if (user.role === 'TECHNICIAN') {
-      // Technician dashboard: assigned tickets
+    } else if (ENGINEER_ROLES.includes(user.role)) {
+      // Engineer dashboard: assigned tickets
       const tickets = await prisma.ticket.findMany({
         where: { assignedToId: user.id },
         include: {
@@ -114,7 +115,7 @@ router.get('/', authenticate, async (req, res) => {
       });
 
       const technicians = await prisma.user.findMany({
-        where: { role: 'TECHNICIAN' },
+        where: { role: { in: ENGINEER_ROLES } },
         include: {
           specialization: true,
           _count: {
@@ -167,7 +168,7 @@ router.get('/', authenticate, async (req, res) => {
       });
 
       const technicians = await prisma.user.findMany({
-        where: { role: 'TECHNICIAN' },
+        where: { role: { in: ENGINEER_ROLES } },
         include: {
           specialization: true,
           _count: {

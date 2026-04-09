@@ -62,6 +62,10 @@ async function main() {
         {
             name: 'Server/Admin',
             description: 'قواعد البيانات، السيرفرات، إعدادات النظام'
+        },
+        {
+            name: 'Software Engineering',
+            description: 'Software engineering support for application issues, bugs, and programming-related requests'
         }
     ];
 

@@ -61,6 +61,7 @@ export const checkPermission = (permission) => {
     const permissions = {
       USER: ['create_ticket'],
       TECHNICIAN: ['create_ticket', 'update_ticket_status'],
+      SOFTWARE_ENGINEER: ['create_ticket', 'update_ticket_status'],
       IT_ADMIN: ['create_ticket', 'update_ticket_status'],
       IT_MANAGER: ['create_ticket', 'add_specialization', 'add_user', 'add_technician', 'add_admin', 'view_all_tickets']
     };

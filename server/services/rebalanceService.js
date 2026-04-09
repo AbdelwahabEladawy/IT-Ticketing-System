@@ -9,8 +9,8 @@ const teamLocks = new Map();
 // Rebalance must only move pending tickets. IN_PROGRESS, USER_ACTION_NEEDED, etc
 // are handled by the ticket detail flow, not by the balancer.
 const ACTIVE_STATUSES = ['ASSIGNED'];
-const ELIGIBLE_ROLES = ['TECHNICIAN', 'IT_ADMIN'];
-const ENGINEER_ROLES = ['TECHNICIAN', 'IT_ADMIN'];
+const ELIGIBLE_ROLES = ['TECHNICIAN', 'IT_ADMIN', 'SOFTWARE_ENGINEER'];
+const ENGINEER_ROLES = ['TECHNICIAN', 'IT_ADMIN', 'SOFTWARE_ENGINEER'];
 
 const isPrivateEngineerTicket = (ticket) =>
   ticket.createdById &&

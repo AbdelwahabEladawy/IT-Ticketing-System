@@ -30,7 +30,7 @@ export const assignTicketRoundRobin = async (specializationId, excludeTechnician
   return withRoundRobinLock(specializationId, async () => {
     const technicians = await prisma.user.findMany({
       where: {
-        role: { in: ['TECHNICIAN', 'IT_ADMIN'] },
+        role: { in: ['TECHNICIAN', 'IT_ADMIN', 'SOFTWARE_ENGINEER'] },
         specializationId,
         isOnline: true,
         ...(excludeTechnicianId ? { id: { not: excludeTechnicianId } } : {})
