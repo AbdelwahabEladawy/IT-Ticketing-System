@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { getAchievementDelegate } from '../utils/achievementDelegate.js';
 
 const prisma = new PrismaClient();
 
@@ -391,7 +392,7 @@ export const getAchievementExportRows = async (filters) => {
     }
   }
 
-  const achievements = await prisma.achievement.findMany({
+  const achievements = await getAchievementDelegate(prisma).findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { title: 'asc' }],
     select: {

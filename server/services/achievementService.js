@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
+import { getAchievementDelegate } from '../utils/achievementDelegate.js';
 
 const achievementSelect = {
   id: true,
@@ -60,7 +59,7 @@ export function parseAchievementListFilters(query = {}) {
 }
 
 export async function createAchievement({ userId, title, description }) {
-  return prisma.achievement.create({
+  return getAchievementDelegate(prisma).create({
     data: {
       userId,
       title: title.trim(),
@@ -71,14 +70,14 @@ export async function createAchievement({ userId, title, description }) {
 }
 
 export async function getAchievementById(id) {
-  return prisma.achievement.findUnique({
+  return getAchievementDelegate(prisma).findUnique({
     where: { id },
     select: achievementSelect
   });
 }
 
 export async function updateAchievementForUser({ achievementId, userId, title, description }) {
-  const achievement = await prisma.achievement.findUnique({
+  const achievement = await getAchievementDelegate(prisma).findUnique({
     where: { id: achievementId },
     select: achievementSelect
   });
@@ -91,7 +90,7 @@ export async function updateAchievementForUser({ achievementId, userId, title, d
     fail(403, 'Forbidden');
   }
 
-  return prisma.achievement.update({
+  return getAchievementDelegate(prisma).update({
     where: { id: achievementId },
     data: {
       title: title.trim(),
@@ -102,7 +101,7 @@ export async function updateAchievementForUser({ achievementId, userId, title, d
 }
 
 export async function deleteAchievementForUser({ achievementId, userId }) {
-  const achievement = await prisma.achievement.findUnique({
+  const achievement = await getAchievementDelegate(prisma).findUnique({
     where: { id: achievementId },
     select: achievementSelect
   });
@@ -115,7 +114,7 @@ export async function deleteAchievementForUser({ achievementId, userId }) {
     fail(403, 'Forbidden');
   }
 
-  await prisma.achievement.delete({
+  await getAchievementDelegate(prisma).delete({
     where: { id: achievementId }
   });
 
@@ -146,7 +145,7 @@ export async function listAchievementsForUser(userId, options = {}) {
     }
   }
 
-  return prisma.achievement.findMany({
+  return getAchievementDelegate(prisma).findMany({
     where,
     orderBy: { createdAt: 'desc' },
     select: achievementSelect
