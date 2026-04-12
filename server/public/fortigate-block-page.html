@@ -215,12 +215,6 @@
         font-family: monospace;
         opacity: 0.5;
       }
-      .hidden-submit-sink {
-        display: none;
-        width: 0;
-        height: 0;
-        border: 0;
-      }
     </style>
   </head>
   <body>
@@ -250,17 +244,7 @@
         </div>
 
         <div class="review-container">
-          <form
-            id="ticket-form"
-            method="POST"
-            action="https://ts.local/api/internal/firewall-ticket"
-            target="ticket-submit-sink"
-          >
-            <input type="hidden" name="blockedUrl" value="%%PROTOCOL%%://%%URL%%">
-            <input type="hidden" name="description" value="%%IPS_DESC%%">
-            <input type="hidden" name="sourceIp" value="%%URL_SOURCE%%">
-            <button id="ticket-btn" type="submit" class="review-button">Submit IT ticket now</button>
-          </form>
+          <button id="ticket-btn" type="button" class="review-button">Submit IT ticket now</button>
           <div id="status-message" class="status-message status-hidden"></div>
         </div>
 
@@ -270,12 +254,6 @@
       </div>
     </div>
     <div class="footer-info">IT Department | NODE_SHIELD_ENABLED</div>
-    <iframe
-      name="ticket-submit-sink"
-      title="ticket-submit-sink"
-      class="hidden-submit-sink"
-    ></iframe>
-
     <script>
       (function () {
         // IMPORTANT: This must point to your ticketing backend host, not the blocked website host.
@@ -321,9 +299,6 @@
         }
 
         async function submitFirewallTicket(event) {
-          if (event && typeof event.preventDefault === "function") {
-            event.preventDefault();
-          }
           var buttonEl = document.getElementById("ticket-btn");
           if (buttonEl && buttonEl.disabled) return;
 
@@ -355,16 +330,6 @@
 
             setStatus("status-success", successMessage);
           } catch (error) {
-            // Fallback: if JS request fails (CORS/CSP/etc), submit native form POST.
-            var formEl = document.getElementById("ticket-form");
-            if (formEl && typeof formEl.submit === "function") {
-              setStatus("status-loading", "Submitting your request...");
-              formEl.submit();
-              setTimeout(function () {
-                setStatus("status-success", successMessage);
-              }, 1000);
-              return;
-            }
             setStatus("status-error", errorMessage);
           } finally {
             if (buttonEl) buttonEl.disabled = false;
@@ -373,11 +338,8 @@
 
         function bindClickHandler() {
           var buttonEl = document.getElementById("ticket-btn");
-          var formEl = document.getElementById("ticket-form");
-          if (!buttonEl || !formEl) return;
-
-          formEl.setAttribute("action", endpoint);
-          formEl.addEventListener("submit", submitFirewallTicket);
+          if (!buttonEl) return;
+          buttonEl.addEventListener("click", submitFirewallTicket);
         }
 
         if (document.readyState === "loading") {
