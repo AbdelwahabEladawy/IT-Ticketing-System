@@ -199,6 +199,7 @@
     "password": "Password",
     "submit": "Sign in",
     "signup": "Sign up",
+    "noAccount": "Don't have an account?",
     "subtitle": "Sign in to continue",
     "failed": "Login failed",
     "brandSubtitle": "IT Ticketing System",

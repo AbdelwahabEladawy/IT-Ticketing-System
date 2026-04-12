@@ -10,9 +10,35 @@ import { markOnline } from '../services/presenceService.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/** Domains allowed for self-service signup (case-insensitive). */
+const ALLOWED_SIGNUP_DOMAINS = [
+  'globalenergy-eg.net',
+  'globalenergy-eg.com',
+  'fadensa.com'
+];
+
+const getEmailDomain = (email) => {
+  if (typeof email !== 'string') return '';
+  const at = email.lastIndexOf('@');
+  if (at === -1) return '';
+  return email.slice(at + 1).trim().toLowerCase();
+};
+
 // Signup
 router.post('/signup', [
-  body('email').isEmail().normalizeEmail(),
+  body('email')
+    .isEmail()
+    .withMessage('Valid email is required')
+    .normalizeEmail()
+    .custom((value) => {
+      const domain = getEmailDomain(value);
+      if (!domain || !ALLOWED_SIGNUP_DOMAINS.includes(domain)) {
+        throw new Error(
+          'Signup is only allowed for @globalenergy-eg.net, @globalenergy-eg.com, or @fadensa.com email addresses.'
+        );
+      }
+      return true;
+    }),
   body('password').isLength({ min: 6 }),
   body('name').trim().notEmpty()
 ], async (req, res) => {

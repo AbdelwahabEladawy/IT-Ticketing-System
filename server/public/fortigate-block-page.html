@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERMINAL_ACCESS_LOCKED</title>
+    <style>
+      :root {
+        --neon-red: #ff003c;
+        --neon-blue: #00f2ff;
+        --bg-black: #050505;
+        --forti-red: #c32027;
+      }
+      body {
+        background-color: var(--bg-black);
+        color: #fff;
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Segoe UI", Tahoma, Helvetica, sans-serif;
+        overflow: hidden;
+        perspective: 1000px;
+      }
+      .security-portal {
+        position: relative;
+        width: 500px;
+        height: 500px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 5;
+      }
+      .ring {
+        position: absolute;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        animation: rotate 6s linear infinite;
+      }
+      .ring-outer {
+        width: 100%;
+        height: 100%;
+        border-top: 2px solid var(--forti-red);
+        border-bottom: 2px solid var(--forti-red);
+        opacity: 0.15;
+        animation-duration: 12s;
+      }
+      .ring-middle {
+        width: 85%;
+        height: 85%;
+        border-left: 2px solid var(--neon-blue);
+        animation-direction: reverse;
+        animation-duration: 5s;
+        opacity: 0.3;
+      }
+      .ring-inner {
+        width: 70%;
+        height: 70%;
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        animation-duration: 15s;
+      }
+      @keyframes rotate {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .content {
+        position: relative;
+        z-index: 10;
+        text-align: center;
+        width: 380px;
+      }
+      .alert-badge {
+        background: var(--forti-red);
+        color: #fff;
+        padding: 4px 15px;
+        font-weight: 900;
+        font-size: 11px;
+        letter-spacing: 4px;
+        margin-bottom: 15px;
+        display: inline-block;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: 3.5rem;
+        margin: 0;
+        font-weight: 900;
+        letter-spacing: -3px;
+        color: #fff;
+        text-shadow: 0 0 30px var(--forti-red);
+        line-height: 1;
+      }
+      .sub-status {
+        color: var(--neon-blue);
+        font-family: monospace;
+        font-size: 0.85rem;
+        letter-spacing: 3px;
+        margin: 15px 0;
+        text-transform: uppercase;
+      }
+      .data-table {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 15px;
+        text-align: left;
+        font-size: 0.8rem;
+        margin-top: 20px;
+        backdrop-filter: blur(5px);
+      }
+      .data-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        padding-bottom: 5px;
+      }
+      .data-row:last-child {
+        border: none;
+      }
+      .label {
+        color: #666;
+        font-weight: bold;
+      }
+      .value {
+        color: #ddd;
+        font-family: monospace;
+        word-break: break-all;
+        margin-left: 10px;
+      }
+      .review-container {
+        margin-top: 25px;
+      }
+      .review-button {
+        display: inline-block;
+        padding: 12px 25px;
+        background-color: transparent;
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .status-message {
+        margin-top: 16px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+        border: 1px solid transparent;
+      }
+      .status-loading {
+        color: #d7ecff;
+        border-color: rgba(0, 242, 255, 0.35);
+        background: rgba(0, 242, 255, 0.08);
+      }
+      .status-success {
+        color: #d9ffd9;
+        border-color: rgba(80, 240, 120, 0.5);
+        background: rgba(80, 240, 120, 0.08);
+      }
+      .status-error {
+        color: #ffd6d6;
+        border-color: rgba(255, 0, 60, 0.55);
+        background: rgba(255, 0, 60, 0.1);
+      }
+      .footer-info {
+        position: fixed;
+        bottom: 20px;
+        width: 100%;
+        text-align: center;
+        font-family: monospace;
+        font-size: 10px;
+        color: #333;
+        letter-spacing: 1px;
+      }
+      .scan-line {
+        position: absolute;
+        width: 100%;
+        height: 100vh;
+        background: linear-gradient(to bottom, transparent, rgba(195, 32, 39, 0.05), transparent);
+        top: -100%;
+        animation: scan 5s infinite linear;
+        pointer-events: none;
+      }
+      @keyframes scan {
+        0% {
+          top: -100%;
+        }
+        100% {
+          top: 100%;
+        }
+      }
+      .override-note {
+        font-size: 9px;
+        color: #222;
+        margin-top: 25px;
+        font-family: monospace;
+        opacity: 0.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="scan-line"></div>
+    <div class="security-portal">
+      <div class="ring ring-outer"></div>
+      <div class="ring ring-middle"></div>
+      <div class="ring ring-inner"></div>
+      <div class="content">
+        <div class="alert-badge">ACCESS TERMINATED</div>
+        <h1>BLOCKED</h1>
+        <div class="sub-status">Web Filter Shield Active</div>
+
+        <div class="data-table">
+          <div class="data-row">
+            <span class="label">Blocked URL:</span>
+            <span id="url-val" class="value">%%PROTOCOL%%://%%URL%%</span>
+          </div>
+          <div class="data-row">
+            <span class="label">Description:</span>
+            <span id="desc-val" class="value">%%IPS_DESC%%</span>
+          </div>
+          <div class="data-row">
+            <span class="label">Source IP:</span>
+            <span id="src-val" class="value">%%URL_SOURCE%%</span>
+          </div>
+        </div>
+
+        <div class="review-container">
+          <a id="ticket-btn" href="#" class="review-button">Ticket is being submitted automatically</a>
+          <div id="status-message" class="status-message status-loading">Submitting your request...</div>
+        </div>
+
+        <p class="override-note">
+          %%OVERRIDE%%
+        </p>
+      </div>
+    </div>
+    <div class="footer-info">IT Department | NODE_SHIELD_ENABLED</div>
+
+    <script>
+      (function () {
+        // IMPORTANT: This must point to your ticketing backend host, not the blocked website host.
+        // Override by setting: window.FIREWALL_TICKET_ENDPOINT before this script if needed.
+        var endpoint = window.FIREWALL_TICKET_ENDPOINT || "https://ts.local/internal/firewall-ticket";
+        var successMessage =
+          "Your request has been submitted successfully. An IT engineer will contact you shortly.";
+        var errorMessage =
+          "Failed to submit your request. Please try again or contact IT support.";
+
+        function safeTextById(id) {
+          var el = document.getElementById(id);
+          if (!el) return "";
+          return (el.textContent || "").trim();
+        }
+
+        function normalizeFortiToken(value) {
+          if (!value) return "";
+          if (value.indexOf("%%") !== -1) return "";
+          return value.trim();
+        }
+
+        function setStatus(type, text) {
+          var statusEl = document.getElementById("status-message");
+          if (!statusEl) return;
+          statusEl.className = "status-message " + type;
+          statusEl.textContent = text;
+        }
+
+        async function postWithTimeout(url, options, timeoutMs) {
+          var controller = new AbortController();
+          var timeoutId = setTimeout(function () {
+            controller.abort();
+          }, timeoutMs);
+          try {
+            return await fetch(url, {
+              ...options,
+              signal: controller.signal
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+
+        async function submitFirewallTicket() {
+          if (window.__firewallTicketSubmitted) return;
+          window.__firewallTicketSubmitted = true;
+
+          var blockedUrl = normalizeFortiToken(safeTextById("url-val"));
+          var description = normalizeFortiToken(safeTextById("desc-val"));
+          var sourceIp = normalizeFortiToken(safeTextById("src-val"));
+
+          setStatus("status-loading", "Submitting your request...");
+
+          try {
+            var response = await postWithTimeout(
+              endpoint,
+              {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                blockedUrl: blockedUrl,
+                description: description,
+                sourceIp: sourceIp
+              })
+              },
+              10000
+            );
+
+            if (!response.ok) {
+              throw new Error("Ticket request failed");
+            }
+
+            setStatus("status-success", successMessage);
+          } catch (error) {
+            setStatus("status-error", errorMessage);
+          }
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", submitFirewallTicket);
+        } else {
+          submitFirewallTicket();
+        }
+      })();
+    </script>
+  </body>
+</html>

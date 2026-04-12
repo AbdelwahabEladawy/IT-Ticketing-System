@@ -15,6 +15,7 @@ import suggestionRoutes from './routes/suggestions.js';
 import achievementRoutes from './routes/achievements.js';
 import presenceRoutes from './routes/presence.js';
 import reportsRoutes from './routes/reports.js';
+import internalRoutes from './routes/internal.js';
 import { setupPresenceWebSocket } from './services/wsPresence.js';
 import { runPresenceSweeper } from './services/presenceService.js';
 import schedulingRoutes from './features/scheduling/scheduling.routes.js';
@@ -34,6 +35,7 @@ const server = http.createServer(app);
 
 app.use(cors());
 app.use(express.json());
+app.use('/internal', express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -49,6 +51,7 @@ app.use('/api/presence', presenceRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/llm', llmRoutes);
 app.use('/api/scheduling-tickets', schedulingRoutes);
+app.use('/internal', internalRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'IT Ticketing System API' });

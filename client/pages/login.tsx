@@ -8,6 +8,7 @@ import {
   saveLoginCredentials,
 } from '../utils/auth';
 import Image from 'next/image';
+import Link from 'next/link';
 import logoG from "../public/assets/logoG.png"
 import { Eye, EyeOff } from "lucide-react";
 
@@ -142,6 +143,16 @@ export default function Login() {
           </div>
 
         </form>
+
+        <p className="mt-6 text-center text-sm text-gray-800">
+          <span className="text-gray-700">{t('login.noAccount')}</span>{' '}
+          <Link
+            href="/signup"
+            className="font-semibold text-indigo-800 underline decoration-indigo-600/60 underline-offset-2 hover:text-indigo-950"
+          >
+            {t('login.signup')}
+          </Link>
+        </p>
 
         <p className="mt-12 text-center bg-blue-400/90 text-gray-800 rounded-xl font-bold py-2 px-3 text-md">
           GEC Software Development  <span className='text-sm text-gray-700 '>GEC-SOFT@2026</span>

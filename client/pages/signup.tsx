@@ -4,6 +4,49 @@ import Link from 'next/link';
 import api from '../utils/api';
 import { persistAuthSession } from '../utils/auth';
 
+const ALLOWED_SIGNUP_DOMAINS = [
+  'globalenergy-eg.net',
+  'globalenergy-eg.com',
+  'fadensa.com'
+] as const;
+
+const SIGNUP_DOMAIN_ERROR =
+  'Signup is only allowed for @globalenergy-eg.net, @globalenergy-eg.com, or @fadensa.com email addresses.';
+
+function getEmailDomain(email: string): string {
+  const trimmed = email.trim();
+  const at = trimmed.lastIndexOf('@');
+  if (at === -1) return '';
+  return trimmed.slice(at + 1).toLowerCase();
+}
+
+function isAllowedSignupEmail(email: string): boolean {
+  const domain = getEmailDomain(email);
+  return (ALLOWED_SIGNUP_DOMAINS as readonly string[]).includes(domain);
+}
+
+function formatSignupError(err: unknown): string {
+  const ax = err as {
+    response?: { data?: { error?: string; errors?: Array<{ msg?: string; message?: string }> } };
+    message?: string;
+  };
+  const data = ax.response?.data;
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error;
+  }
+  const list = data?.errors;
+  if (Array.isArray(list) && list.length > 0) {
+    const parts = list
+      .map((e) => (typeof e?.msg === 'string' ? e.msg : e?.message))
+      .filter((m): m is string => typeof m === 'string' && m.trim().length > 0);
+    if (parts.length > 0) return parts.join(' ');
+  }
+  if (typeof ax.message === 'string' && ax.message) {
+    return ax.message;
+  }
+  return 'Signup failed';
+}
+
 export default function Signup() {
   const router = useRouter();
   const [formData, setFormData] = useState({
@@ -24,18 +67,23 @@ export default function Signup() {
       return;
     }
 
+    if (!isAllowedSignupEmail(formData.email)) {
+      setError(SIGNUP_DOMAIN_ERROR);
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await api.post('/auth/signup', {
         name: formData.name,
-        email: formData.email,
+        email: formData.email.trim(),
         password: formData.password
       });
       persistAuthSession(response.data.token, response.data.user);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Signup failed');
+    } catch (err: unknown) {
+      setError(formatSignupError(err));
     } finally {
       setLoading(false);
     }
@@ -47,6 +95,9 @@ export default function Signup() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
           <p className="text-gray-600">Sign up to get started</p>
+          <p className="mt-2 text-xs text-gray-500">
+            Use your company email: @globalenergy-eg.net, @globalenergy-eg.com, or @fadensa.com
+          </p>
         </div>
         
         {error && (
@@ -80,7 +131,7 @@ export default function Signup() {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-              placeholder="your@email.com"
+              placeholder="you@globalenergy-eg.com"
             />
           </div>
 
