@@ -47,11 +47,6 @@ npm install
 DATABASE_URL="postgresql://user:password@host:5432/database?sslmode=require"
 JWT_SECRET="your-secret-key-change-in-production"
 PORT=5000
-FIREWALL_TICKET_SYSTEM_EMAIL="firewall-bot@globalenergy-eg.com"
-# Optional hardening for FortiGate internal endpoint:
-# FIREWALL_ALLOWED_ORIGINS="https://fortigate.local,https://blocked.globalenergy-eg.net"
-# FIREWALL_TRUST_X_FORWARDED_FOR=false
-# FIREWALL_DUPLICATE_WINDOW_MINUTES=30
 ```
 
 ### 3. إعداد Prisma
@@ -163,10 +158,6 @@ npm run dev:client
 - `PATCH /api/tickets/:id/status` - تحديث الحالة
 - `POST /api/tickets/:id/assign` - تعيين تذكرة (IT Admin)
 - `POST /api/tickets/:id/reassign` - إعادة تعيين (IT Manager)
-
-### Internal (Firewall Integration)
-- `POST /internal/firewall-ticket` - إنشاء تذكرة تلقائياً من صفحة الحظر (بدون login)
-- `GET /internal/fortigate-block-page.html` - صفحة حظر جاهزة مع إرسال تلقائي للتيكت
 
 ### Users
 - `GET /api/users` - جميع المستخدمين (IT Manager)
