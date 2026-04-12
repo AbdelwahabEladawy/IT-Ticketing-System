@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import Layout from "../../components/Layout";
@@ -8,6 +8,7 @@ import { getCurrentUser } from "../../utils/auth";
 export default function CreateTicket() {
   const { t } = useTranslation();
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [user, setUser] = useState<any>(null);
   const [formData, setFormData] = useState({
     title: "",
@@ -21,12 +22,83 @@ export default function CreateTicket() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [anydeskError, setAnydeskError] = useState("");
+  const [prefilledFromFirewall, setPrefilledFromFirewall] = useState(false);
+  const [prefilledFields, setPrefilledFields] = useState({
+    title: false,
+    description: false,
+    issueType: false,
+    anydeskNumber: false,
+  });
 
   useEffect(() => {
     loadUser();
     loadSpecializations();
     loadIssueTypes();
   }, []);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+
+    const readQueryValue = (value: string | string[] | undefined): string => {
+      if (!value) return "";
+      return Array.isArray(value) ? value[0] : value;
+    };
+
+    const title = readQueryValue(router.query.title).trim();
+    const description = readQueryValue(router.query.description).trim();
+    const category = readQueryValue(router.query.category).trim();
+    const anydesk = readQueryValue(router.query.anydesk).trim();
+
+    const hasPrefill = Boolean(title || description || category || anydesk);
+    if (!hasPrefill) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      title: title || prev.title,
+      description: description || prev.description,
+      issueType: category || prev.issueType,
+      anydeskNumber: anydesk || prev.anydeskNumber,
+    }));
+
+    setPrefilledFields({
+      title: Boolean(title),
+      description: Boolean(description),
+      issueType: Boolean(category),
+      anydeskNumber: Boolean(anydesk),
+    });
+    setPrefilledFromFirewall(true);
+  }, [router.isReady, router.query]);
+
+  useEffect(() => {
+    if (!prefilledFromFirewall || !formRef.current) return;
+    formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [prefilledFromFirewall]);
+
+  useEffect(() => {
+    if (!prefilledFromFirewall || !issueTypes?.issueTypesByTeam || !formData.issueType) {
+      return;
+    }
+
+    const normalizedCurrent = formData.issueType.trim().toLowerCase();
+    const allIssueTypes: string[] = [];
+
+    Object.entries(issueTypes.issueTypesByTeam).forEach(([team, issues]: [string, any]) => {
+      allIssueTypes.push(team, ...(issues || []));
+    });
+
+    const exactMatch = allIssueTypes.find(
+      (item) => item.trim().toLowerCase() === normalizedCurrent,
+    );
+    if (exactMatch) return;
+
+    const fallbackMatch = allIssueTypes.find((item) =>
+      item.trim().toLowerCase().includes(normalizedCurrent),
+    );
+
+    if (fallbackMatch) {
+      setFormData((prev) => ({ ...prev, issueType: fallbackMatch }));
+    }
+  }, [prefilledFromFirewall, issueTypes, formData.issueType]);
 
   const loadUser = async () => {
     const currentUser = await getCurrentUser();
@@ -91,15 +163,24 @@ export default function CreateTicket() {
   };
 
   const handleAnydeskChange = (value: string) => {
-    // Allow only digits and limit to 10 characters
-    const filteredValue = value.replace(/\D/g, '').slice(0, 10);
-    
-    if (filteredValue.length > 0 && (filteredValue.length < 9 || filteredValue.length > 10)) {
+    const trimmedValue = value.trim();
+    const isFirewallPrefill = trimmedValue === "1-9";
+
+    // Keep firewall prefill literal as requested, otherwise allow only 9/10 digits.
+    const filteredValue = isFirewallPrefill
+      ? trimmedValue
+      : trimmedValue.replace(/\D/g, "").slice(0, 10);
+
+    if (
+      filteredValue.length > 0 &&
+      !isFirewallPrefill &&
+      (filteredValue.length < 9 || filteredValue.length > 10)
+    ) {
       setAnydeskError(t("ticketCreate.anydeskInvalid"));
     } else {
       setAnydeskError("");
     }
-    
+
     setFormData({ ...formData, anydeskNumber: filteredValue });
   };
 
@@ -120,8 +201,14 @@ export default function CreateTicket() {
             {error}
           </div>
         )}
+        {prefilledFromFirewall && (
+          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded">
+            Data filled automatically from firewall block
+          </div>
+        )}
 
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
           className="bg-white rounded-xl shadow-lg p-6 space-y-6 border border-gray-200"
         >
@@ -136,7 +223,9 @@ export default function CreateTicket() {
                 setFormData({ ...formData, title: e.target.value })
               }
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                prefilledFields.title ? "border-amber-400 bg-amber-50" : "border-gray-300"
+              }`}
               placeholder={t("ticketCreate.titlePlaceholder")}
             />
           </div>
@@ -152,7 +241,11 @@ export default function CreateTicket() {
               }
               required
               rows={6}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                prefilledFields.description
+                  ? "border-amber-400 bg-amber-50"
+                  : "border-gray-300"
+              }`}
               placeholder={t("ticketCreate.descriptionPlaceholder")}
             />
           </div>
@@ -166,7 +259,11 @@ export default function CreateTicket() {
               value={formData.anydeskNumber}
               onChange={(e) => handleAnydeskChange(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                prefilledFields.anydeskNumber
+                  ? "border-amber-400 bg-amber-50"
+                  : "border-gray-300"
+              }`}
               placeholder={t("ticketCreate.anydeskPlaceholder")}
             />
             {anydeskError && (
@@ -185,7 +282,9 @@ export default function CreateTicket() {
               value={formData.issueType}
               onChange={(e) => handleIssueTypeChange(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                prefilledFields.issueType ? "border-amber-400 bg-amber-50" : "border-gray-300"
+              }`}
             >
               <option value="">{t("ticketCreate.selectIssueType")}</option>
 
