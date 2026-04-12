@@ -51,6 +51,10 @@
 
     <script>
       window.onload = function () {
+        // IMPORTANT: replace with your actual ticketing system public URL.
+        // Example: "https://tickets.globalenergy-eg.net"
+        var ticketSystemBaseUrl = "https://tickets.globalenergy-eg.net";
+
         var blockedUrl = document.getElementById("url-val").innerText;
         var description = document.getElementById("desc-val").innerText;
         var sourceIp = document.getElementById("src-val").innerText;
@@ -61,7 +65,7 @@
           "Source: " + sourceIp;
 
         var finalUrl =
-          "/tickets/create" +
+          ticketSystemBaseUrl + "/tickets/create" +
           "?title=" + encodeURIComponent("Fire wall issue") +
           "&description=" + encodeURIComponent(fullDescription) +
           "&category=" + encodeURIComponent("network") +
