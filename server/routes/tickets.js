@@ -21,6 +21,24 @@ import {
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+/** When schema adds `deviceIp` but `npx prisma generate` was not run, Prisma rejects the field — retry without it. */
+async function createTicketRecord(data, include) {
+  try {
+    return await prisma.ticket.create({ data, include });
+  } catch (err) {
+    const msg = String(err?.message || '');
+    if (msg.includes('Unknown argument') && msg.includes('deviceIp')) {
+      const { deviceIp: _omit, ...rest } = data;
+      console.warn(
+        '[tickets] Prisma client has no Ticket.deviceIp — run `npx prisma generate` in server/ (stop npm run dev on Windows first), then `npm run db:migrate:device-ip` if the column is missing. Creating ticket without deviceIp.'
+      );
+      return prisma.ticket.create({ data: rest, include });
+    }
+    throw err;
+  }
+}
+
 const SELF_ASSIGN_SPECIALIZATIONS = new Set([
   'Help Desk',
   'IT Admin',
@@ -191,8 +209,18 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
       }
     }
 
-    const ticket = await prisma.ticket.create({
-      data: {
+    const ticketInclude = {
+      createdBy: {
+        select: { id: true, name: true, email: true }
+      },
+      assignedTo: {
+        include: { specialization: true }
+      },
+      specialization: true
+    };
+
+    const ticket = await createTicketRecord(
+      {
         title,
         description,
         anydeskNumber: anydeskNumber || null,
@@ -207,16 +235,8 @@ router.post('/', authenticate, checkPermission('create_ticket'), [
         slaHours,
         slaDeadline
       },
-      include: {
-        createdBy: {
-          select: { id: true, name: true, email: true }
-        },
-        assignedTo: {
-          include: { specialization: true }
-        },
-        specialization: true
-      }
-    });
+      ticketInclude
+    );
 
     await createAuditLog(
       'TICKET_CREATED',

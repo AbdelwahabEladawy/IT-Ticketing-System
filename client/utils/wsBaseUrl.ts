@@ -1,10 +1,11 @@
+import { getPublicApiBaseUrl } from './publicApiUrl';
+
 /**
- * Build WebSocket origin from NEXT_PUBLIC_API_URL.
+ * Build WebSocket origin from the same base as REST (`/api` stripped).
  * Browsers forbid ws:// from HTTPS pages — use wss:// when the document is secure.
  */
 export const getWsBaseFromApiUrl = (): string => {
-  const apiBase =
-    process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+  const apiBase = getPublicApiBaseUrl();
   let origin = apiBase.replace(/\/api\/?$/, '');
 
   const pageIsHttps =

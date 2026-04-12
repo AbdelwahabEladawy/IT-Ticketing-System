@@ -1,4 +1,5 @@
 import { getToken } from './auth';
+import { getPublicApiBaseUrl } from './publicApiUrl';
 import { getWsBaseFromApiUrl } from './wsBaseUrl';
 
 const HEARTBEAT_MS = Number(process.env.NEXT_PUBLIC_PRESENCE_HEARTBEAT_MS || 15000);
@@ -28,7 +29,7 @@ const generateTabId = (): string => {
 const postHeartbeat = async () => {
   const token = getToken();
   if (!token) return;
-  await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/presence/heartbeat`, {
+  await fetch(`${getPublicApiBaseUrl()}/presence/heartbeat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -43,7 +44,7 @@ const postDisconnect = () => {
   if (!token || !tabId) return;
   const payload = JSON.stringify({ tabId });
   const payloadWithToken = JSON.stringify({ tabId, token });
-  const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/presence/disconnect`;
+  const url = `${getPublicApiBaseUrl()}/presence/disconnect`;
   navigator.sendBeacon(url, new Blob([payloadWithToken || payload], { type: 'application/json' }));
 };
 
