@@ -5,10 +5,64 @@ import Layout from "../../components/Layout";
 import api from "../../utils/api";
 import { getCurrentUser } from "../../utils/auth";
 
+const readQueryValue = (value: string | string[] | undefined): string => {
+  if (!value) return "";
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const normalizeIssueTypeValue = (value: string): string =>
+  value.trim().toLowerCase();
+
+const resolveIssueTypePrefill = (
+  value: string,
+  issueTypesByTeam?: Record<string, string[]>,
+): string => {
+  if (!value || !issueTypesByTeam) return value;
+
+  const normalizedValue = normalizeIssueTypeValue(value);
+  let partialIssueMatch = "";
+  let partialTeamMatch = "";
+
+  for (const [team, issues] of Object.entries(issueTypesByTeam)) {
+    const exactIssueMatch = issues.find(
+      (issue) => normalizeIssueTypeValue(issue) === normalizedValue,
+    );
+    if (exactIssueMatch) return exactIssueMatch;
+
+    if (normalizeIssueTypeValue(team) === normalizedValue) {
+      return issues[0] || value;
+    }
+
+    if (!partialIssueMatch) {
+      const matchedIssue = issues.find((issue) => {
+        const normalizedIssue = normalizeIssueTypeValue(issue);
+        return (
+          normalizedIssue.includes(normalizedValue) ||
+          normalizedValue.includes(normalizedIssue)
+        );
+      });
+      if (matchedIssue) {
+        partialIssueMatch = matchedIssue;
+      }
+    }
+
+    if (
+      !partialTeamMatch &&
+      (normalizeIssueTypeValue(team).includes(normalizedValue) ||
+        normalizedValue.includes(normalizeIssueTypeValue(team)))
+    ) {
+      partialTeamMatch = issues[0] || "";
+    }
+  }
+
+  return partialIssueMatch || partialTeamMatch || value;
+};
+
 export default function CreateTicket() {
   const { t } = useTranslation();
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const websiteReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const [user, setUser] = useState<any>(null);
   const [formData, setFormData] = useState({
     title: "",
@@ -16,13 +70,15 @@ export default function CreateTicket() {
     anydeskNumber: "",
     issueType: "",
     specializationId: "",
+    websiteAccessReason: "",
   });
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [issueTypes, setIssueTypes] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [anydeskError, setAnydeskError] = useState("");
-  const [prefilledFromFirewall, setPrefilledFromFirewall] = useState(false);
+  const [websiteReasonError, setWebsiteReasonError] = useState("");
+  const [isBlockPageFlow, setIsBlockPageFlow] = useState(false);
   const [prefilledFields, setPrefilledFields] = useState({
     title: false,
     description: false,
@@ -39,66 +95,61 @@ export default function CreateTicket() {
   useEffect(() => {
     if (!router.isReady) return;
 
-    const readQueryValue = (value: string | string[] | undefined): string => {
-      if (!value) return "";
-      return Array.isArray(value) ? value[0] : value;
-    };
-
     const title = readQueryValue(router.query.title).trim();
     const description = readQueryValue(router.query.description).trim();
     const category = readQueryValue(router.query.category).trim();
     const anydesk = readQueryValue(router.query.anydesk).trim();
+    const fromBlock = readQueryValue(router.query.from).trim().toLowerCase() === "block";
 
-    const hasPrefill = Boolean(title || description || category || anydesk);
-    if (!hasPrefill) return;
+    setIsBlockPageFlow(fromBlock);
+    setPrefilledFields({
+      title: Boolean(title),
+      description: Boolean(description),
+      issueType: Boolean(category),
+      anydeskNumber: !fromBlock && Boolean(anydesk),
+    });
+
+    const hasPrefill = Boolean(title || description || category || (!fromBlock && anydesk));
+    if (!hasPrefill && !fromBlock) return;
 
     setFormData((prev) => ({
       ...prev,
       title: title || prev.title,
       description: description || prev.description,
       issueType: category || prev.issueType,
-      anydeskNumber: anydesk || prev.anydeskNumber,
+      anydeskNumber: fromBlock ? "" : anydesk || prev.anydeskNumber,
     }));
 
-    setPrefilledFields({
-      title: Boolean(title),
-      description: Boolean(description),
-      issueType: Boolean(category),
-      anydeskNumber: Boolean(anydesk),
-    });
-    setPrefilledFromFirewall(true);
+    if (fromBlock) {
+      setAnydeskError("");
+    } else {
+      setWebsiteReasonError("");
+    }
   }, [router.isReady, router.query]);
 
   useEffect(() => {
-    if (!prefilledFromFirewall || !formRef.current) return;
+    if (!isBlockPageFlow || !formRef.current) return;
     formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [prefilledFromFirewall]);
+    const focusTimer = window.setTimeout(() => {
+      websiteReasonRef.current?.focus();
+    }, 350);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [isBlockPageFlow]);
 
   useEffect(() => {
-    if (!prefilledFromFirewall || !issueTypes?.issueTypesByTeam || !formData.issueType) {
+    if (!issueTypes?.issueTypesByTeam || !formData.issueType) {
       return;
     }
 
-    const normalizedCurrent = formData.issueType.trim().toLowerCase();
-    const allIssueTypes: string[] = [];
-
-    Object.entries(issueTypes.issueTypesByTeam).forEach(([team, issues]: [string, any]) => {
-      allIssueTypes.push(team, ...(issues || []));
-    });
-
-    const exactMatch = allIssueTypes.find(
-      (item) => item.trim().toLowerCase() === normalizedCurrent,
+    const resolvedIssueType = resolveIssueTypePrefill(
+      formData.issueType,
+      issueTypes.issueTypesByTeam,
     );
-    if (exactMatch) return;
-
-    const fallbackMatch = allIssueTypes.find((item) =>
-      item.trim().toLowerCase().includes(normalizedCurrent),
-    );
-
-    if (fallbackMatch) {
-      setFormData((prev) => ({ ...prev, issueType: fallbackMatch }));
+    if (resolvedIssueType !== formData.issueType) {
+      setFormData((prev) => ({ ...prev, issueType: resolvedIssueType }));
     }
-  }, [prefilledFromFirewall, issueTypes, formData.issueType]);
+  }, [issueTypes, formData.issueType]);
 
   const loadUser = async () => {
     const currentUser = await getCurrentUser();
@@ -126,23 +177,56 @@ export default function CreateTicket() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setWebsiteReasonError("");
     setLoading(true);
 
-    if (anydeskError) {
+    if (!isBlockPageFlow && anydeskError) {
       setError(t("ticketCreate.anydeskInvalid"));
       setLoading(false);
       return;
     }
 
+    const trimmedTitle = formData.title.trim();
+    const trimmedDescription = formData.description.trim();
+    const trimmedIssueType = formData.issueType.trim();
+    const trimmedAnydeskNumber = formData.anydeskNumber.trim();
+    const trimmedWebsiteAccessReason = formData.websiteAccessReason.trim();
+
+    if (!trimmedTitle || !trimmedDescription) {
+      setError(
+        t("ticketCreate.requiredFields", {
+          defaultValue: "Title and description are required",
+        }),
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (isBlockPageFlow && !trimmedWebsiteAccessReason) {
+      const validationMessage = t("ticketCreate.blockReasonRequired", {
+        defaultValue: "Please explain why you want to access this website.",
+      });
+      setWebsiteReasonError(validationMessage);
+      setError(validationMessage);
+      setLoading(false);
+      window.setTimeout(() => {
+        websiteReasonRef.current?.focus();
+      }, 0);
+      return;
+    }
+
     try {
-      const problemType = formData.issueType ? "PREDEFINED" : "CUSTOM";
+      const problemType = trimmedIssueType ? "PREDEFINED" : "CUSTOM";
+      const finalDescription = isBlockPageFlow
+        ? `${trimmedDescription}\n\nWhy do you want to access this website?\n${trimmedWebsiteAccessReason}`
+        : trimmedDescription;
 
       const payload: any = {
-        title: formData.title,
-        description: formData.description,
-        anydeskNumber: formData.anydeskNumber,
+        title: trimmedTitle,
+        description: finalDescription,
+        anydeskNumber: isBlockPageFlow ? "" : trimmedAnydeskNumber,
         problemType: problemType,
-        issueType: formData.issueType || null,
+        issueType: trimmedIssueType || null,
       };
 
       await api.post("/tickets", payload);
@@ -201,9 +285,18 @@ export default function CreateTicket() {
             {error}
           </div>
         )}
-        {prefilledFromFirewall && (
-          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded">
-            Data filled automatically from firewall block
+        {isBlockPageFlow && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-medium">
+              {t("ticketCreate.blockPageHelper", {
+                defaultValue: "This ticket was created from a blocked website page.",
+              })}
+            </p>
+            <p className="mt-1 text-amber-800">
+              {t("ticketCreate.blockPageHint", {
+                defaultValue: "Please explain why access to the blocked website is needed.",
+              })}
+            </p>
           </div>
         )}
 
@@ -250,29 +343,62 @@ export default function CreateTicket() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t("ticketCreate.anydesk")}
-            </label>
-            <input
-              type="text"
-              value={formData.anydeskNumber}
-              onChange={(e) => handleAnydeskChange(e.target.value)}
-              required
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
-                prefilledFields.anydeskNumber
-                  ? "border-amber-400 bg-amber-50"
-                  : "border-gray-300"
-              }`}
-              placeholder={t("ticketCreate.anydeskPlaceholder")}
-            />
-            {anydeskError && (
-              <p className="mt-1 text-sm text-red-600">{anydeskError}</p>
-            )}
-            <p className="mt-1 text-sm text-gray-500">
-              {t("ticketCreate.anydeskHint")}
-            </p>
-          </div>
+          {isBlockPageFlow ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {t("ticketCreate.websiteAccessReason")}
+                <span className="text-red-500"> *</span>
+              </label>
+              <textarea
+                ref={websiteReasonRef}
+                value={formData.websiteAccessReason}
+                onChange={(e) => {
+                  if (websiteReasonError) {
+                    setWebsiteReasonError("");
+                  }
+                  setFormData({
+                    ...formData,
+                    websiteAccessReason: e.target.value,
+                  });
+                }}
+                required
+                rows={5}
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                  websiteReasonError ? "border-red-300 bg-red-50" : "border-gray-300"
+                }`}
+                placeholder={t("ticketCreate.websiteAccessReasonPlaceholder", {
+                  defaultValue: "Explain your business need for this website...",
+                })}
+              />
+              {websiteReasonError && (
+                <p className="mt-1 text-sm text-red-600">{websiteReasonError}</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {t("ticketCreate.anydesk")}
+              </label>
+              <input
+                type="text"
+                value={formData.anydeskNumber}
+                onChange={(e) => handleAnydeskChange(e.target.value)}
+                required
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${
+                  prefilledFields.anydeskNumber
+                    ? "border-amber-400 bg-amber-50"
+                    : "border-gray-300"
+                }`}
+                placeholder={t("ticketCreate.anydeskPlaceholder")}
+              />
+              {anydeskError && (
+                <p className="mt-1 text-sm text-red-600">{anydeskError}</p>
+              )}
+              <p className="mt-1 text-sm text-gray-500">
+                {t("ticketCreate.anydeskHint")}
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

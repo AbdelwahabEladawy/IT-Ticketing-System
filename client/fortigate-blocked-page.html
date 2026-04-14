@@ -29,14 +29,37 @@
       .label {
         font-weight: 700;
       }
-      #ticket-btn {
-        display: inline-block;
-        margin-top: 16px;
-        padding: 10px 16px;
+      .actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .button {
+        text-decoration: none;
         border-radius: 10px;
+        font-weight: 700;
+        transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      }
+      .button-primary {
+        min-width: 220px;
+        padding: 14px 18px;
         background: #4f46e5;
         color: #fff;
-        text-decoration: none;
+        text-align: center;
+      }
+      .button-primary:hover {
+        background: #4338ca;
+      }
+      .button-secondary {
+        padding: 10px 16px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #0f172a;
+      }
+      .button-secondary:hover {
+        background: #f8fafc;
       }
     </style>
   </head>
@@ -46,7 +69,10 @@
       <div class="row"><span class="label">Blocked URL:</span> <span id="url-val">https://example.com</span></div>
       <div class="row"><span class="label">Description:</span> <span id="desc-val">Policy violation</span></div>
       <div class="row"><span class="label">Source IP:</span> <span id="src-val">10.0.0.1</span></div>
-      <a id="ticket-btn" href="#">Open Ticket</a>
+      <div class="actions">
+        <a id="safety-btn" class="button button-primary" href="#">Back to Safety</a>
+        <a id="ticket-btn" class="button button-secondary" href="#">Open Ticket</a>
+      </div>
     </div>
 
     <script>
@@ -58,6 +84,7 @@
         var blockedUrl = document.getElementById("url-val").innerText;
         var description = document.getElementById("desc-val").innerText;
         var sourceIp = document.getElementById("src-val").innerText;
+        var safeUrl = ticketSystemBaseUrl + "/";
 
         var fullDescription =
           "Blocked URL: " + blockedUrl + "\n" +
@@ -66,11 +93,12 @@
 
         var finalUrl =
           ticketSystemBaseUrl + "/tickets/create" +
-          "?title=" + encodeURIComponent("Fire wall issue") +
+          "?from=block" +
+          "&title=" + encodeURIComponent("Fire wall issue") +
           "&description=" + encodeURIComponent(fullDescription) +
-          "&category=" + encodeURIComponent("network") +
-          "&anydesk=" + encodeURIComponent("1-9");
+          "&category=" + encodeURIComponent("network");
 
+        document.getElementById("safety-btn").href = safeUrl;
         document.getElementById("ticket-btn").href = finalUrl;
       };
     </script>

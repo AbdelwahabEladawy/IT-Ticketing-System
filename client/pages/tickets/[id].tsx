@@ -587,6 +587,14 @@ export default function TicketDetail() {
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="text-sm font-medium text-gray-500 mb-1">
+                {t("ticketDetail.customerName")}
+              </h3>
+              <p className="text-lg font-semibold text-gray-900">
+                {ticket.createdBy?.name || t("ticketDetail.notSpecified")}
+              </p>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
                 {t("ticketDetail.anydesk")}
               </h3>
               <p className="text-lg font-semibold text-indigo-600" dir="ltr">
