@@ -267,7 +267,12 @@ export default function Dashboard() {
           labelKey: "dashboard.closed",
           value: dashboard.stats.closed ?? 0,
         };
-        return [openCard, resolvedCard, closedCard, allCard];
+        const stat = {
+          key: "active" as const,
+          labelKey: "waiting Queue",
+          value: dashboard?.stats?.waitingQueue ?? 0
+        };
+        return [openCard, resolvedCard, closedCard, allCard ,stat];
       })()
     : [];
 
@@ -359,7 +364,7 @@ export default function Dashboard() {
         </h1>
 
         {dashboard?.stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
             {[
               ...summaryCards,
               ...(userRole === "SUPER_ADMIN"
@@ -397,90 +402,142 @@ export default function Dashboard() {
           </div>
         )}
 
-        {isEngineerDashboard && (
-          <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {t("dashboard.teamQueueTitle", {
-                    defaultValue: "Team Queue",
-                  })}
-                </h2>
-                <p className="text-sm text-gray-600">
-                  {t("dashboard.teamQueueSummary", {
-                    defaultValue:
-                      "{{waiting}} waiting, {{mine}} active with you",
-                    waiting: dashboard?.stats?.waitingQueue ?? 0,
-                    mine: dashboard?.stats?.myActive ?? 0,
-                  })}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleTakeNextTicket}
-                disabled={claimingNext}
-                className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+{isEngineerDashboard && (
+  <div className="mb-6 overflow-hidden   ">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 pb-5">
+        {/* <div>
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+            {t("dashboard.teamQueueTitle", {
+              defaultValue: "Team Queue",
+            })}
+          </h2>
+
+      
+        </div> */}
+
+        {/* <div>
+          <button
+            type="button"
+            onClick={handleTakeNextTicket}
+            disabled={claimingNext}
+            className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {claimingNext
+              ? t("dashboard.claimingNext", {
+                  defaultValue: "Claiming...",
+                })
+              : t("dashboard.takeNextTicket", {
+                  defaultValue: "Take next ticket",
+                })}
+          </button>
+        </div> */}
+      </div>
+
+      {/* <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 p-5 text-white shadow-lg shadow-indigo-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-indigo-100">Waiting Queue</p>
+              <h3 className="mt-3 text-4xl font-bold tracking-tight">
+                {dashboard?.stats?.waitingQueue ?? 0}
+              </h3>
+            </div>
+
+            <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.8}
+                stroke="currentColor"
+                className="h-6 w-6"
               >
-                {claimingNext
-                  ? t("dashboard.claimingNext", {
-                      defaultValue: "Claiming...",
-                    })
-                  : t("dashboard.takeNextTicket", {
-                      defaultValue: "Take next ticket",
-                    })}
-              </button>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8.25 18.75a1.5 1.5 0 003 0V15a1.5 1.5 0 00-3 0v3.75zm4.5 0a1.5 1.5 0 003 0v-7.5a1.5 1.5 0 00-3 0v7.5zm-9 0a1.5 1.5 0 003 0v-12a1.5 1.5 0 00-3 0v12z"
+                />
+              </svg>
             </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {[
-                {
-                  key: "TEAM" as const,
-                  label: t("dashboard.teamQueueView", {
-                    defaultValue: "Team Queue",
-                  }),
-                },
-                {
-                  key: "MINE" as const,
-                  label: t("dashboard.myTicketsView", {
-                    defaultValue: "My Tickets",
-                  }),
-                },
-                {
-                  key: "WAITING" as const,
-                  label: t("dashboard.waitingQueueView", {
-                    defaultValue: "Waiting Queue",
-                  }),
-                },
-              ].map((view) => (
-                <button
-                  key={view.key}
-                  type="button"
-                  onClick={() => setQueueView(view.key)}
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    queueView === view.key
-                      ? "bg-indigo-100 text-indigo-700"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {view.label}
-                </button>
-              ))}
-            </div>
-
-            {claimMessage && (
-              <p className="mt-3 text-sm text-emerald-700">{claimMessage}</p>
-            )}
-            {claimError && (
-              <p className="mt-3 text-sm text-rose-700">{claimError}</p>
-            )}
           </div>
-        )}
+        </div>
+
+        <div className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-400 via-orange-400 to-orange-500 p-5 text-white shadow-lg shadow-orange-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-orange-100">Active Tickets</p>
+              <h3 className="mt-3 text-4xl font-bold tracking-tight">
+                {dashboard?.stats?.myActive ?? 0}
+              </h3>
+            </div>
+
+            <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.8}
+                stroke="currentColor"
+                className="h-6 w-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12.75 11.25 15 15 9.75m6 2.25a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5 shadow-sm md:col-span-2 xl:col-span-1">
+          <p className="text-sm font-medium text-gray-500">Performance Note</p>
+          <p className="mt-3 text-sm leading-6 text-gray-700">
+            Stay on top of your queue by claiming tickets quickly and keeping active tasks moving.
+          </p>
+        </div>
+      </div> */}
+
+      {claimMessage && (
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          {claimMessage}
+        </div>
+      )}
+
+      {claimError && (
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          {claimError}
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+
+
+
+
 
         <div className="bg-white rounded-xl shadow-lg border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">
               {t("dashboard.ticketsSection")}
             </h2>
+             <button
+            type="button"
+            onClick={handleTakeNextTicket}
+            disabled={claimingNext}
+            className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {claimingNext
+              ? t("dashboard.claimingNext", {
+                  defaultValue: "Claiming...",
+                })
+              : t("dashboard.takeNextTicket", {
+                  defaultValue: "Take next ticket",
+                })}
+          </button>
           </div>
           <div className="overflow-x-auto overscroll-x-contain">
             <table className="min-w-full w-full table-auto divide-y divide-gray-200 text-start">
