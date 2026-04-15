@@ -23,6 +23,8 @@
     "saving": "جاري الحفظ...",
     "passwordMin": "كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل",
     "passwordMismatch": "كلمة المرور والتأكيد غير متطابقين",
+    "connectionOnline": "أنت متصل",
+    "connectionOffline": "أنت غير متصل",
     "superAdminNavTicketsTitle": "لوحة التحكم والطلبات",
     "superAdminNavManagementTitle": "الفريق والتخصصات",
     "navMenuTickets": "الطلبات",

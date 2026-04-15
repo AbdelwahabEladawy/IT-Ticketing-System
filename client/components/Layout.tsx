@@ -15,10 +15,22 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+const INTERNET_CHECK_URLS = [
+  "https://www.msftconnecttest.com/connecttest.txt",
+  "https://clients3.google.com/generate_204",
+  "https://cloudflare.com/cdn-cgi/trace",
+];
+const SERVER_IP = "192.168.100.3";
+const SERVER_HEALTH_PATH = "/api/health";
+const INTERNET_CHECK_TIMEOUT_MS = 3000;
+const ONLINE_POLL_INTERVAL_MS = 5000;
+const OFFLINE_POLL_INTERVAL_MS = 2000;
+
 export default function Layout({ children }: LayoutProps) {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [previousNotificationCount, setPreviousNotificationCount] = useState(0);
@@ -41,6 +53,134 @@ export default function Layout({ children }: LayoutProps) {
       setUser(currentUser);
     };
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let disposed = false;
+    let activeController: AbortController | null = null;
+    let intervalId: number | null = null;
+
+    const setPollingInterval = (delay: number, callback: () => void) => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      intervalId = window.setInterval(callback, delay);
+    };
+
+    const buildProbeUrl = (url: string) =>
+      `${url}${url.includes("?") ? "&" : "?"}ts=${Date.now()}`;
+
+    const getServerHealthUrl = () => {
+      const apiPort = process.env.NEXT_PUBLIC_API_PORT || "5000";
+      return `http://${SERVER_IP}:${apiPort}${SERVER_HEALTH_PATH}?ts=${Date.now()}`;
+    };
+
+    const probeInternet = async (signal: AbortSignal) => {
+      const probeRequests = INTERNET_CHECK_URLS.map((url) =>
+        fetch(buildProbeUrl(url), {
+          method: "GET",
+          mode: "no-cors",
+          cache: "no-store",
+          credentials: "omit",
+          signal,
+        }),
+      );
+
+      await Promise.any(probeRequests);
+    };
+
+    const probeServerHealth = async (signal: AbortSignal) => {
+      const response = await fetch(getServerHealthUrl(), {
+        method: "GET",
+        cache: "no-store",
+        credentials: "omit",
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error("Server health check failed");
+      }
+    };
+
+    const syncConnectionState = async () => {
+      if (!window.navigator.onLine) {
+        if (!disposed) {
+          setIsOnline(false);
+          setPollingInterval(OFFLINE_POLL_INTERVAL_MS, syncConnectionState);
+        }
+        return;
+      }
+
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+      const timeoutId = window.setTimeout(
+        () => controller.abort(),
+        INTERNET_CHECK_TIMEOUT_MS,
+      );
+
+      try {
+        await probeInternet(controller.signal);
+        await probeServerHealth(controller.signal);
+        if (!disposed) {
+          setIsOnline(true);
+          setPollingInterval(ONLINE_POLL_INTERVAL_MS, syncConnectionState);
+        }
+      } catch {
+        if (!disposed) {
+          setIsOnline(false);
+          setPollingInterval(OFFLINE_POLL_INTERVAL_MS, syncConnectionState);
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (activeController === controller) {
+          activeController = null;
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      syncConnectionState();
+    };
+    const handleOffline = () => {
+      activeController?.abort();
+      setIsOnline(false);
+      setPollingInterval(OFFLINE_POLL_INTERVAL_MS, syncConnectionState);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncConnectionState();
+      }
+    };
+    const handleFocus = () => {
+      void syncConnectionState();
+    };
+
+    void syncConnectionState();
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const connection = (navigator as any).connection;
+    connection?.addEventListener?.("change", handleOnline);
+
+    return () => {
+      disposed = true;
+      activeController?.abort();
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      connection?.removeEventListener?.("change", handleOnline);
+    };
   }, []);
 
   useEffect(() => {
@@ -697,6 +837,22 @@ export default function Layout({ children }: LayoutProps) {
       />
 
       <ChatBotModal />
+
+      <div
+        className={`fixed bottom-4 right-4 z-50 rounded-xl border px-4 py-3 text-sm font-semibold text-white shadow-lg transition-colors ${
+          isOnline
+            ? "border-emerald-200 bg-emerald-500"
+            : "border-red-200 bg-red-500"
+        }`}
+      >
+        {isOnline
+          ? t("layout.connectionOnline", {
+              defaultValue: "You're online",
+            })
+          : t("layout.connectionOffline", {
+              defaultValue: "You're offline",
+            })}
+      </div>
 
       {user?.mustChangePassword && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

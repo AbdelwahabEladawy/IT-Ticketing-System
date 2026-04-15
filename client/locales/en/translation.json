@@ -23,6 +23,8 @@
     "saving": "Saving...",
     "passwordMin": "New password must be at least 6 characters",
     "passwordMismatch": "Password and confirmation do not match",
+    "connectionOnline": "You're online",
+    "connectionOffline": "You're offline",
     "superAdminNavTicketsTitle": "Dashboard & tickets",
     "superAdminNavManagementTitle": "Team & catalog",
     "navMenuTickets": "Tickets",
