@@ -12,6 +12,9 @@
     "check-users": "node scripts/check-users.js",
     "create-admin": "node scripts/create-admin.js",
     "fix-admin": "node scripts/fix-admin.js",
+    "db:transfer": "node scripts/transfer-db.js",
+    "db:transfer:dump": "node scripts/transfer-db.js --dump-only",
+    "db:transfer:restore": "node scripts/transfer-db.js --restore-only",
     "test:rebalance": "node scripts/test-rebalance.js",
     "test:rebalance:unit": "node scripts/test-rebalance-unit.js",
     "load:presence": "node scripts/load-presence.js"

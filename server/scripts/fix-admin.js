@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const prisma = new PrismaClient();
 
@@ -97,7 +97,7 @@ async function fixAdmin() {
   } catch (error) {
     console.error('❌ Error:', error.message);
     if (error.code === 'P1001') {
-      console.error('   Database connection failed. Check your DATABASE_URL in .env');
+      console.error('   Database connection failed. Check your SERVER_DATABASE_URL in .env');
     } else {
       console.error('   Full error:', error);
     }

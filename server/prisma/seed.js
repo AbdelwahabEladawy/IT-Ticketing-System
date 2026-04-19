@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const prisma = new PrismaClient();
 
@@ -16,7 +16,7 @@ async function main() {
         console.log('✅ Database connected successfully\n');
     } catch (error) {
         console.error('❌ Database connection failed:', error.message);
-        console.error('   Please check your DATABASE_URL in .env file');
+        console.error('   Please check your SERVER_DATABASE_URL in .env file');
         process.exit(1);
     }
 

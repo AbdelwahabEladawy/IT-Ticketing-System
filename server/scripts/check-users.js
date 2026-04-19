@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const prisma = new PrismaClient();
 
@@ -58,7 +58,7 @@ async function checkUsers() {
   } catch (error) {
     console.error('❌ Error:', error.message);
     if (error.code === 'P1001') {
-      console.error('   Database connection failed. Check your DATABASE_URL in .env');
+      console.error('   Database connection failed. Check your SERVER_DATABASE_URL in .env');
     }
   } finally {
     await prisma.$disconnect();
